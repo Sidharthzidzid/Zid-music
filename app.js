@@ -52,6 +52,8 @@ const state = {
     sleepTimerId: null,
     sleepTimeRemaining: 0,
     nextPreloadedId: '',
+    offlineSongs: [],
+    downloadDirectory: localStorage.getItem('sonicwave_download_path') || 'Download/Zid Music',
 };
 
 // ========== DOM References ==========
@@ -176,6 +178,13 @@ const DOM = {
     artistPlayAllBtn: $('artist-play-all-btn'),
     artistBackBtn: $('artist-back-btn'),
     artistSongsList: $('artist-songs-list'),
+
+    // Storage Picker references
+    storageLocationModal: $('storage-location-modal'),
+    saveStorageLocationBtn: $('save-storage-location-btn'),
+    currentStoragePathText: $('current-storage-path-text'),
+    changeStorageBtn: $('change-storage-btn'),
+    customStoragePath: $('custom-storage-path'),
 };
 
 // ========== Initialization ==========
@@ -194,7 +203,24 @@ async function init() {
     loadTrending();
     renderFavorites();
     renderHistory();
-    loadOfflineLibrary();
+    
+    // Check download directory setting
+    const isNative = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+    let downloadPath = localStorage.getItem('sonicwave_download_path');
+    
+    if (isNative && !downloadPath) {
+        // Show storage location picker on native first open
+        showStorageLocationModal(true);
+    } else {
+        if (!downloadPath) {
+            downloadPath = 'Download/Zid Music';
+            localStorage.setItem('sonicwave_download_path', downloadPath);
+        }
+        state.downloadDirectory = downloadPath;
+        updateStoragePathDisplay();
+        loadOfflineLibrary();
+    }
+    
     loadPersonalizedRecommendations();
 
     // Initialize SPA navigation state
@@ -412,6 +438,10 @@ function createSongRow(data, number, context = 'search') {
         badgeHTML = '<span class="badge badge-offline" style="margin-left: 8px; vertical-align: middle; display: inline-block;">Offline</span>';
     }
 
+    const isOfflineSaved = state.offlineSongs && state.offlineSongs.some(s => {
+        return s.id === data.id || (s.name.toLowerCase() === data.name.toLowerCase() && s.artist.toLowerCase() === data.artist.toLowerCase());
+    });
+
     const row = document.createElement('div');
     row.className = `song-row${isPlaying ? ' playing' : ''}`;
     row.dataset.songId = data.id;
@@ -438,9 +468,9 @@ function createSongRow(data, number, context = 'search') {
             </button>
             ${context === 'offline'
                 ? `<button class="btn-icon delete-offline-btn" title="Delete Offline Song">
-                       <svg viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+                       <svg viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                    </button>`
-                : `<button class="btn-icon download-btn" title="Download Audio">
+                : `<button class="btn-icon download-btn" title="Download Audio" style="${isOfflineSaved ? 'display: none;' : ''}">
                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                    </button>`
             }
@@ -809,9 +839,10 @@ function saveOfflineSong(songData, audioBlob, imageBlob) {
             try {
                 const Filesystem = window.Capacitor.Plugins.Filesystem;
                 const filename = `${sanitizeFilename(songData.name)} - ${sanitizeFilename(songData.artist)}.mp3`;
-                localPath = `Download/Zid Music/${filename}`;
+                const relativePath = state.downloadDirectory || 'Download/Zid Music';
+                localPath = `${relativePath}/${filename}`;
                 
-                showToast(`Saving "${songData.name}" to Zid Music folder...`, 'info');
+                showToast(`Saving "${songData.name}" to folder ${relativePath}...`, 'info');
                 const base64Data = await blobToBase64(audioBlob);
                 
                 // Write with a fallback: if it fails, request permissions and try one more time
@@ -845,7 +876,7 @@ function saveOfflineSong(songData, audioBlob, imageBlob) {
                 }
                 
                 console.log('Saved audio file successfully to public storage:', localPath);
-                showToast(`Saved to device storage: Zid Music/${filename}`, 'success');
+                showToast(`Saved to device storage: ${localPath}`, 'success');
                 // Clear the heavy audioBlob so we do not bloat the IndexedDB database
                 audioBlob = null;
             } catch (fsErr) {
@@ -876,6 +907,17 @@ function saveOfflineSong(songData, audioBlob, imageBlob) {
     });
 }
 
+function deleteOfflineSongEntry(songId) {
+    return new Promise((resolve, reject) => {
+        if (!offlineDb) return reject('DB not initialized');
+        const transaction = offlineDb.transaction(OFFLINE_STORE_NAME, 'readwrite');
+        const store = transaction.objectStore(OFFLINE_STORE_NAME);
+        const request = store.delete(songId);
+        request.onsuccess = () => resolve(true);
+        request.onerror = (e) => reject(e.target.error);
+    });
+}
+
 async function deleteOfflineSong(songId) {
     // 1. Delete physical file if present on Android
     try {
@@ -897,14 +939,119 @@ async function deleteOfflineSong(songId) {
     }
 
     // 2. Delete entry from IndexedDB database
-    return new Promise((resolve, reject) => {
-        if (!offlineDb) return reject('DB not initialized');
-        const transaction = offlineDb.transaction(OFFLINE_STORE_NAME, 'readwrite');
-        const store = transaction.objectStore(OFFLINE_STORE_NAME);
-        const request = store.delete(songId);
-        request.onsuccess = () => resolve(true);
-        request.onerror = (e) => reject(e.target.error);
+    const success = await deleteOfflineSongEntry(songId);
+    
+    // Show download buttons for this song again across the app dynamically
+    document.querySelectorAll(`.song-row[data-song-id="${songId}"]`).forEach(row => {
+        const dlBtn = row.querySelector('.download-btn');
+        if (dlBtn) dlBtn.style.display = '';
     });
+    
+    return success;
+}
+
+function showStorageLocationModal(isFirstLaunch = false) {
+    if (!DOM.storageLocationModal) return;
+    DOM.storageLocationModal.classList.remove('hidden');
+    
+    const currentPath = localStorage.getItem('sonicwave_download_path') || 'Download/Zid Music';
+    const radioBtn = document.querySelector(`input[name="storage-preset"][value="${currentPath}"]`);
+    if (radioBtn) {
+        radioBtn.checked = true;
+        DOM.customStoragePath.disabled = true;
+    } else {
+        const customRadio = $('preset-custom-radio');
+        if (customRadio) customRadio.checked = true;
+        DOM.customStoragePath.value = currentPath;
+        DOM.customStoragePath.disabled = false;
+    }
+}
+
+function hideStorageLocationModal() {
+    if (DOM.storageLocationModal) {
+        DOM.storageLocationModal.classList.add('hidden');
+    }
+}
+
+function updateStoragePathDisplay() {
+    if (DOM.currentStoragePathText) {
+        DOM.currentStoragePathText.textContent = state.downloadDirectory;
+    }
+}
+
+function setupStorageSettings() {
+    // Save storage location button
+    if (DOM.saveStorageLocationBtn) {
+        DOM.saveStorageLocationBtn.addEventListener('click', async () => {
+            const selectedRadio = document.querySelector('input[name="storage-preset"]:checked');
+            if (!selectedRadio) return;
+            
+            let selectedPath = selectedRadio.value;
+            if (selectedPath === 'custom') {
+                selectedPath = DOM.customStoragePath.value.trim();
+                if (!selectedPath) {
+                    showToast('Please enter a custom folder path!', 'warning');
+                    return;
+                }
+            }
+            
+            // Clean up paths
+            selectedPath = selectedPath.replace(/\\/g, '/').replace(/\/+$/, '');
+            if (selectedPath.startsWith('/')) {
+                selectedPath = selectedPath.substring(1);
+            }
+            
+            localStorage.setItem('sonicwave_download_path', selectedPath);
+            state.downloadDirectory = selectedPath;
+            updateStoragePathDisplay();
+            hideStorageLocationModal();
+            showToast(`Download folder set to: ${selectedPath}`, 'success');
+            
+            loadOfflineLibrary();
+        });
+    }
+
+    // Change settings radio toggles
+    document.querySelectorAll('input[name="storage-preset"]').forEach(radio => {
+        radio.addEventListener('change', (e) => {
+            if (e.target.value === 'custom') {
+                DOM.customStoragePath.disabled = false;
+                DOM.customStoragePath.focus();
+            } else {
+                DOM.customStoragePath.disabled = true;
+            }
+        });
+    });
+
+    // Change folder button next to tab title
+    if (DOM.changeStorageBtn) {
+        DOM.changeStorageBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            showStorageLocationModal(false);
+        });
+    }
+}
+
+async function ensureDirectoryExists(path) {
+    if (!window.Capacitor || !window.Capacitor.Plugins || !window.Capacitor.Plugins.Filesystem) return;
+    const Filesystem = window.Capacitor.Plugins.Filesystem;
+    try {
+        await Filesystem.stat({
+            path: path,
+            directory: 'EXTERNAL'
+        });
+    } catch (e) {
+        try {
+            await Filesystem.mkdir({
+                path: path,
+                directory: 'EXTERNAL',
+                recursive: true
+            });
+            console.log('Created download directory:', path);
+        } catch (mkdirErr) {
+            console.error('Failed to create download directory:', mkdirErr);
+        }
+    }
 }
 
 function getOfflineSongs() {
@@ -944,10 +1091,28 @@ async function loadOfflineLibrary() {
 
     // 2. Fetch downloads stored in IndexedDB
     let localDBSongs = [];
+    let filesOnDisk = [];
+    const downloadDir = localStorage.getItem('sonicwave_download_path') || 'Download/Zid Music';
+
+    // 3. Scan physical directory if Filesystem is available
+    const hasFs = !!(window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Filesystem);
+    if (hasFs) {
+        const Filesystem = window.Capacitor.Plugins.Filesystem;
+        try {
+            await ensureDirectoryExists(downloadDir);
+            const readdirResult = await Filesystem.readdir({
+                path: downloadDir,
+                directory: 'EXTERNAL'
+            });
+            filesOnDisk = readdirResult.files || [];
+            console.log('Scanned physical directory. Found files:', filesOnDisk);
+        } catch (readdirErr) {
+            console.error('Failed to read external directory:', readdirErr);
+        }
+    }
+
     try {
         const dbSongs = await getOfflineSongs();
-        
-        // Map songs, and verify if the file still exists if it's on the filesystem
         const mappedSongsPromises = dbSongs.map(async (record) => {
             try {
                 const songObj = {
@@ -961,34 +1126,46 @@ async function loadOfflineLibrary() {
                     localPath: record.localPath || null
                 };
 
-                if (record.localPath && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Filesystem) {
-                    try {
-                        const Filesystem = window.Capacitor.Plugins.Filesystem;
-                        // Check if file exists on disk
-                        await Filesystem.stat({
-                            path: record.localPath,
-                            directory: 'EXTERNAL'
-                        });
-                        
-                        // Get URI and convert to playable web src
-                        const uriResult = await Filesystem.getUri({
-                            path: record.localPath,
-                            directory: 'EXTERNAL'
-                        });
-                        songObj.audioUrl = window.Capacitor.convertFileSrc(uriResult.uri);
-                    } catch (fsErr) {
-                        console.warn(`Local file ${record.localPath} not found:`, fsErr);
-                        // Safe fallback: if we have audioBlob cached in IndexedDB, use it!
-                        if (record.audioBlob) {
-                            songObj.audioUrl = createBlobUrl(record.audioBlob);
-                        } else {
-                            // Otherwise, do not display this song since it cannot be loaded
-                            return null;
+                if (record.localPath && hasFs) {
+                    const Filesystem = window.Capacitor.Plugins.Filesystem;
+                    
+                    // Check if file still exists on disk
+                    // Extract filename from localPath to check against scanned files
+                    const pathParts = record.localPath.split('/');
+                    const filename = pathParts[pathParts.length - 1];
+                    const fileExists = filesOnDisk.some(f => f.name === filename);
+
+                    if (fileExists) {
+                        try {
+                            const uriResult = await Filesystem.getUri({
+                                path: record.localPath,
+                                directory: 'EXTERNAL'
+                            });
+                            songObj.audioUrl = window.Capacitor.convertFileSrc(uriResult.uri);
+                            
+                            // Mark this file as matched (remove from filesOnDisk list so we do not list it twice)
+                            filesOnDisk = filesOnDisk.filter(f => f.name !== filename);
+                        } catch (uriErr) {
+                            console.error('Failed to get URI for file:', record.localPath, uriErr);
+                            if (record.audioBlob) {
+                                songObj.audioUrl = createBlobUrl(record.audioBlob);
+                            } else {
+                                return null;
+                            }
                         }
+                    } else {
+                        // File was deleted from the device! Clean it from IndexedDB
+                        console.warn(`File ${record.localPath} was deleted from disk. Removing from app library.`);
+                        await deleteOfflineSongEntry(record.id);
+                        return null;
                     }
                 } else {
                     // Browser/non-filesystem fallback
-                    songObj.audioUrl = createBlobUrl(record.audioBlob);
+                    if (record.audioBlob) {
+                        songObj.audioUrl = createBlobUrl(record.audioBlob);
+                    } else {
+                        return null;
+                    }
                 }
 
                 return songObj;
@@ -1000,11 +1177,39 @@ async function loadOfflineLibrary() {
 
         const mappedSongs = await Promise.all(mappedSongsPromises);
         localDBSongs = mappedSongs.filter(song => song !== null);
+
+        // 4. Handle files on disk that did not match any IndexedDB record (Manually Added files!)
+        if (hasFs && filesOnDisk.length > 0) {
+            for (const file of filesOnDisk) {
+                if (file.type === 'file' && file.name.toLowerCase().endsWith('.mp3')) {
+                    // Parse name and artist from "Song - Artist.mp3"
+                    const displayTitle = file.name.replace(/\.mp3$/i, '');
+                    const parts = displayTitle.split(' - ');
+                    const name = parts[0] ? parts[0].trim() : displayTitle;
+                    const artist = parts[1] ? parts[1].trim() : 'Local Audio';
+                    
+                    const songObj = {
+                        id: `local-${file.name}`,
+                        name: name,
+                        artist: artist,
+                        album: 'Local Sync',
+                        duration: 0,
+                        imageUrl: 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"%3E%3Crect fill="%231a1a28" width="48" height="48"/%3E%3Ctext x="24" y="30" fill="%234a4a5e" font-size="18" text-anchor="middle"%3E♪%3C/text%3E%3C/svg%3E',
+                        audioUrl: window.Capacitor.convertFileSrc(file.uri),
+                        localPath: `${downloadDir}/${file.name}`,
+                        isOfflineIndexed: true
+                    };
+                    localDBSongs.push(songObj);
+                }
+            }
+        }
+
     } catch (e) {
         console.error('Failed to read offline database records:', e);
     }
 
     const allOfflineSongs = [...scriptSongs, ...localDBSongs];
+    state.offlineSongs = allOfflineSongs;
     renderOfflineLibrary(allOfflineSongs);
 }
 
@@ -1098,6 +1303,13 @@ async function downloadSaavnSong(songData) {
         // Save to IndexedDB
         await saveOfflineSong(songData, audioBlob, imageBlob);
         showToast(`"${songData.name}" is now available offline!`, 'success');
+        
+        // Hide download buttons for this song across the app dynamically
+        document.querySelectorAll(`.song-row[data-song-id="${songData.id}"]`).forEach(row => {
+            const dlBtn = row.querySelector('.download-btn');
+            if (dlBtn) dlBtn.style.display = 'none';
+        });
+
         loadOfflineLibrary();
     } catch (err) {
         console.error('Saavn offline download failed:', err);
@@ -1764,6 +1976,7 @@ function setupEventListeners() {
             DOM.overlayVinylWrapper.style.animationPlayState = 'running';
         }
     });
+    setupStorageSettings();
 }
 
 function handleSongEnd() {
