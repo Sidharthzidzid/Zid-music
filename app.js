@@ -180,6 +180,10 @@ async function init() {
     renderHistory();
     loadOfflineLibrary();
     loadPersonalizedRecommendations();
+
+    // Initialize SPA navigation state
+    history.replaceState({ view: 'home', playlist: null, overlay: false }, '');
+    window.addEventListener('popstate', handlePopState);
 }
 
 // ========== API Connection Test ==========
@@ -1045,7 +1049,10 @@ window.seekAudio = function(time) {
 };
 
 // ========== View Navigation ==========
-function switchView(viewName) {
+function switchView(viewName, shouldPushState = true) {
+    const currentActiveView = document.querySelector('.view.active')?.id?.replace('view-', '') || '';
+    if (viewName === currentActiveView && shouldPushState) return;
+
     document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
     document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
 
@@ -1065,6 +1072,10 @@ function switchView(viewName) {
         renderHistory();
     } else if (viewName === 'playlists') {
         renderPlaylists();
+    }
+
+    if (shouldPushState) {
+        history.pushState({ view: viewName, playlist: null, overlay: false }, '');
     }
 }
 
@@ -1506,9 +1517,13 @@ function setupEventListeners() {
 
     // Back button in playlist details
     DOM.playlistBackBtn?.addEventListener('click', () => {
-        DOM.playlistDetails.classList.add('hidden');
-        DOM.playlistsGrid.classList.remove('hidden');
-        if (DOM.createPlaylistBtn) DOM.createPlaylistBtn.style.display = 'block';
+        if (history.state && history.state.playlist) {
+            history.back();
+        } else {
+            DOM.playlistDetails.classList.add('hidden');
+            DOM.playlistsGrid.classList.remove('hidden');
+            if (DOM.createPlaylistBtn) DOM.createPlaylistBtn.style.display = 'block';
+        }
     });
 
     // Pause heavy visual animations when app is blurred/hidden to save CPU
@@ -1594,16 +1609,28 @@ function formatTime(seconds) {
 }
 
 // ========== Expanded Player Overlay View ==========
-function openOverlay() {
+function openOverlay(shouldPushState = true) {
     if (!state.currentSong) return;
     state.isOverlayOpen = true;
     DOM.playerOverlay.classList.add('active');
     DOM.overlayVolumeSlider.value = state.volume;
+
+    if (shouldPushState) {
+        const currentView = document.querySelector('.view.active')?.id?.replace('view-', '') || 'home';
+        const currentPlaylist = !DOM.playlistDetails.classList.contains('hidden') ? DOM.playlistDetailsTitle.textContent : null;
+        history.pushState({ view: currentView, playlist: currentPlaylist, overlay: true }, '');
+    }
 }
 
-function closeOverlay() {
+function closeOverlay(shouldPushState = true) {
     state.isOverlayOpen = false;
     DOM.playerOverlay.classList.remove('active');
+
+    if (shouldPushState) {
+        if (history.state && history.state.overlay) {
+            history.back();
+        }
+    }
 }
 
 // ========== Synced Lyrics Fetcher & Scroller ==========
@@ -2180,7 +2207,7 @@ function renderPlaylists() {
     });
 }
 
-function showPlaylistDetails(name) {
+function showPlaylistDetails(name, shouldPushState = true) {
     if (!DOM.playlistDetails) return;
     DOM.playlistsGrid.classList.add('hidden');
     DOM.playlistDetails.classList.remove('hidden');
@@ -2197,13 +2224,16 @@ function showPlaylistDetails(name) {
                 <p>This playlist is empty. Add songs from Search or Home!</p>
             </div>
         `;
-        return;
+    } else {
+        songs.forEach((song, index) => {
+            const row = createSongRow(song, index + 1, 'playlist-detail');
+            DOM.playlistSongsList.appendChild(row);
+        });
     }
 
-    songs.forEach((song, index) => {
-        const row = createSongRow(song, index + 1, 'playlist-detail');
-        DOM.playlistSongsList.appendChild(row);
-    });
+    if (shouldPushState) {
+        history.pushState({ view: 'playlists', playlist: name, overlay: false }, '');
+    }
 }
 
 // ========== Playlist Picker Modal ==========
@@ -2241,4 +2271,60 @@ function openPlaylistPicker(song) {
 
 function closePlaylistPicker() {
     DOM.playlistPickerModal?.classList.add('hidden');
+}
+
+// ========== SPA Mobile Back Navigation Handlers ==========
+function handlePopState(event) {
+    // 1. If sidebar is open, close it
+    if (DOM.sidebar && DOM.sidebar.classList.contains('open')) {
+        DOM.sidebar.classList.remove('open');
+        DOM.sidebarOverlay.classList.remove('active');
+        // Restore history entry
+        history.pushState(event.state, '');
+        return;
+    }
+
+    // 2. If playlist picker modal is open, close it
+    if (DOM.playlistPickerModal && !DOM.playlistPickerModal.classList.contains('hidden')) {
+        closePlaylistPicker();
+        // Restore history entry
+        history.pushState(event.state, '');
+        return;
+    }
+
+    const targetState = event.state;
+    if (!targetState) {
+        // Fallback to home
+        switchView('home', false);
+        closeOverlay(false);
+        DOM.playlistDetails.classList.add('hidden');
+        DOM.playlistsGrid.classList.remove('hidden');
+        if (DOM.createPlaylistBtn) DOM.createPlaylistBtn.style.display = 'block';
+        return;
+    }
+
+    // Sync overlay
+    if (targetState.overlay) {
+        if (!state.isOverlayOpen) {
+            openOverlay(false);
+        }
+    } else {
+        if (state.isOverlayOpen) {
+            closeOverlay(false);
+        }
+    }
+
+    // Sync playlist details
+    if (targetState.playlist) {
+        showPlaylistDetails(targetState.playlist, false);
+    } else {
+        DOM.playlistDetails.classList.add('hidden');
+        DOM.playlistsGrid.classList.remove('hidden');
+        if (DOM.createPlaylistBtn) DOM.createPlaylistBtn.style.display = 'block';
+    }
+
+    // Sync view
+    if (targetState.view) {
+        switchView(targetState.view, false);
+    }
 }
