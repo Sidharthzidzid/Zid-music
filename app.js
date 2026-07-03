@@ -804,10 +804,20 @@ function saveOfflineSong(songData, audioBlob, imageBlob) {
         
         let localPath = null;
         
-        // Save to public Documents/Zid Music folder if Capacitor Filesystem is available
+        // Save to public Zid Music folder on external storage if Capacitor Filesystem is available
         if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Filesystem) {
             try {
                 const Filesystem = window.Capacitor.Plugins.Filesystem;
+                
+                // Request Storage Permission first
+                const check = await Filesystem.checkPermissions();
+                if (check.publicStorage !== 'granted') {
+                    const req = await Filesystem.requestPermissions();
+                    if (req.publicStorage !== 'granted') {
+                        throw new Error('Storage permission denied. Go to Android Settings -> Apps -> Zid Music -> Permissions to enable storage access.');
+                    }
+                }
+
                 const filename = `${sanitizeFilename(songData.name)} - ${sanitizeFilename(songData.artist)}.mp3`;
                 localPath = `Zid Music/${filename}`;
                 
@@ -817,15 +827,17 @@ function saveOfflineSong(songData, audioBlob, imageBlob) {
                 await Filesystem.writeFile({
                     path: localPath,
                     data: base64Data,
-                    directory: 'DOCUMENTS',
+                    directory: 'EXTERNAL',
                     recursive: true
                 });
                 
-                console.log('Saved audio file successfully to documents:', localPath);
+                console.log('Saved audio file successfully to public storage:', localPath);
+                showToast(`Saved to device storage: Zid Music/${filename}`, 'success');
                 // Clear the heavy audioBlob so we do not bloat the IndexedDB database
                 audioBlob = null;
             } catch (fsErr) {
                 console.error('Failed to save to device filesystem, falling back to local DB cache:', fsErr);
+                showToast(`Storage info: ${fsErr.message || fsErr}. Storing inside app instead.`, 'warning');
                 localPath = null; // Storing as IndexedDB blob fallback
             }
         }
@@ -860,7 +872,7 @@ async function deleteOfflineSong(songId) {
             try {
                 await Filesystem.deleteFile({
                     path: record.localPath,
-                    directory: 'DOCUMENTS'
+                    directory: 'EXTERNAL'
                 });
                 console.log('Deleted physical audio file:', record.localPath);
             } catch (err) {
@@ -902,11 +914,6 @@ function createBlobUrl(blob) {
     return url;
 }
 
-function clearAllBlobUrls() {
-    generatedBlobUrls.forEach(url => URL.revokeObjectURL(url));
-    generatedBlobUrls.clear();
-}
-
 // ========== Offline Library ==========
 async function loadOfflineLibrary() {
     clearAllBlobUrls();
@@ -941,13 +948,13 @@ async function loadOfflineLibrary() {
                     // Check if file exists on disk
                     await Filesystem.stat({
                         path: record.localPath,
-                        directory: 'DOCUMENTS'
+                        directory: 'EXTERNAL'
                     });
                     
                     // Get URI and convert to playable web src
                     const uriResult = await Filesystem.getUri({
                         path: record.localPath,
-                        directory: 'DOCUMENTS'
+                        directory: 'EXTERNAL'
                     });
                     songObj.audioUrl = window.Capacitor.convertFileSrc(uriResult.uri);
                 } catch (fsErr) {
