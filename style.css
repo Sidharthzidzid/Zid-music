@@ -377,7 +377,7 @@ a {
 
 .search-input {
     width: 100%;
-    padding: 12px 16px 12px 48px;
+    padding: 12px 100px 12px 48px;
     background: var(--bg-card);
     border: 1px solid var(--border-subtle);
     border-radius: var(--radius-lg);
@@ -402,6 +402,7 @@ a {
     display: flex;
     gap: 4px;
     pointer-events: none;
+    z-index: 2;
 }
 
 .search-shortcut kbd {
@@ -1232,6 +1233,14 @@ a {
 
     .search-shortcut {
         display: none;
+    }
+
+    .search-mic-btn {
+        right: 12px;
+    }
+
+    .search-input {
+        padding-right: 48px;
     }
 
     .top-bar {
@@ -2212,21 +2221,23 @@ input:checked + .slider-round:before {
 
 /* === Voice Search & Listening Overlay === */
 .search-mic-btn {
+    position: absolute;
+    right: 60px;
     background: none;
     border: none;
-    color: var(--text-muted);
+    color: var(--text-secondary);
     cursor: pointer;
     padding: 6px;
-    margin-right: 8px;
     display: flex;
     align-items: center;
     justify-content: center;
     border-radius: 50%;
     transition: all 0.2s ease;
+    z-index: 3;
 }
 .search-mic-btn:hover {
-    color: var(--primary);
-    background: rgba(255, 255, 255, 0.05);
+    color: var(--accent-purple);
+    background: rgba(168, 85, 247, 0.1);
 }
 .search-mic-btn svg {
     width: 18px;
