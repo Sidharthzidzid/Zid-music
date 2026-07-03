@@ -562,6 +562,7 @@
         <div class="modal-content" style="background: var(--bg-secondary); border: 1px solid var(--border-light); border-radius: var(--radius-lg); width: 95%; max-width: 420px; padding: 24px; box-shadow: var(--shadow-lg); display: flex; flex-direction: column; gap: 18px;">
             <div style="display: flex; justify-content: space-between; align-items: center;">
                 <h3 style="font-family: var(--font-display); font-size: 1.25rem; font-weight: 700; margin: 0; background: linear-gradient(90deg, #fff, var(--text-secondary)); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;">Select Download Folder</h3>
+                <button id="close-storage-modal-btn" class="btn-icon" style="color: var(--text-secondary); font-size: 1.5rem; line-height: 1; padding: 4px; cursor: pointer; border: none; background: transparent;">&times;</button>
             </div>
             <p style="color: var(--text-secondary); font-size: 0.9rem; margin: 0; line-height: 1.5;">
                 Choose where you want to save downloaded songs on your device. These songs will be accessible in your file manager.
@@ -589,8 +590,22 @@
                     </div>
                 </label>
             </div>
-            <button id="save-storage-location-btn" style="width: 100%; padding: 12px; background: var(--gradient-primary); border: none; border-radius: var(--radius-sm); color: white; font-weight: 600; cursor: pointer; transition: opacity var(--transition-fast);">Apply Location</button>
+            
+            <!-- Data Saver / Preload Setting -->
+            <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px; background: rgba(255, 255, 255, 0.03); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm);">
+                <div style="display: flex; flex-direction: column; text-align: left;">
+                    <span style="color: var(--text-primary); font-weight: 600; font-size: 0.95rem;">Preload Next Song</span>
+                    <span style="color: var(--text-muted); font-size: 0.8rem;">Pre-downloads next track for gapless play (wastes data)</span>
+                </div>
+                <label class="switch">
+                    <input type="checkbox" id="preload-setting-toggle" checked>
+                    <span class="slider-round"></span>
+                </label>
+            </div>
+            
+            <button id="save-storage-location-btn" style="width: 100%; padding: 12px; background: var(--gradient-primary); border: none; border-radius: var(--radius-sm); color: white; font-weight: 600; cursor: pointer; transition: opacity var(--transition-fast);">Apply Settings</button>
         </div>
     </div>
+
 </body>
 </html>
