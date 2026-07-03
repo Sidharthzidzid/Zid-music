@@ -2401,13 +2401,15 @@ input:checked + .slider-round:before {
     height: 18px;
 }
 
-/* Clickable Artist link styling */
-.clickable-artist {
+.clickable-artist,
+.clickable-artist-link {
     cursor: pointer;
     transition: color var(--transition-fast);
+    display: inline-block;
 }
-.clickable-artist:hover {
-    color: var(--primary) !important;
+.clickable-artist:hover,
+.clickable-artist-link:hover {
+    color: var(--accent-purple) !important;
     text-decoration: underline;
 }
 
