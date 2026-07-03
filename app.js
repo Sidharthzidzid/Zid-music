@@ -1,23 +1,4 @@
-/* ============================================
-   SonicWave — Music Player Application Logic
-   ============================================ */
-
-// Override Page Visibility API to keep YouTube iframe playing in background/lock screen
-try {
-    Object.defineProperty(document, 'hidden', {
-        value: false,
-        writable: false
-    });
-    Object.defineProperty(document, 'visibilityState', {
-        value: 'visible',
-        writable: false
-    });
-    document.addEventListener('visibilitychange', (e) => {
-        e.stopImmediatePropagation();
-    }, true);
-} catch (e) {
-    console.warn('Failed to override visibility API:', e);
-}
+// Background audio is handled natively; visibility overrides are removed to save battery and prevent device overheating.
 
 // ========== API Configuration ==========
 const API_BASE_URLS = [
@@ -54,6 +35,7 @@ const state = {
     nextPreloadedId: '',
     offlineSongs: [],
     downloadDirectory: localStorage.getItem('sonicwave_download_path') || 'Download/Zid Music',
+    preloadNextSong: localStorage.getItem('sonicwave_preload_next') !== 'false',
 };
 
 // ========== DOM References ==========
@@ -145,7 +127,7 @@ const DOM = {
     overlayPanelLyrics: $('overlay-panel-lyrics'),
     overlayPanelQueue: $('overlay-panel-queue'),
     overlayQueueContainer: $('overlay-queue-container'),
-    
+
     // Playlists View references
     playlistsGrid: $('playlists-grid'),
     playlistDetails: $('playlist-details'),
@@ -155,7 +137,7 @@ const DOM = {
     playlistPlayBtn: $('playlist-play-btn'),
     playlistDeleteBtn: $('playlist-delete-btn'),
     playlistBackBtn: $('playlist-back-btn'),
-    
+
     // Playlist Picker Modal references
     playlistPickerModal: $('playlist-picker-modal'),
     closePlaylistPickerBtn: $('close-playlist-picker-btn'),
@@ -170,7 +152,7 @@ const DOM = {
     listeningSubtitle: $('listening-subtitle'),
     cancelListeningBtn: $('cancel-listening-btn'),
     navIdentify: $('nav-identify'),
-    
+
     // Artist View references
     viewArtist: $('view-artist'),
     artistNameTitle: $('artist-name-title'),
@@ -185,6 +167,8 @@ const DOM = {
     currentStoragePathText: $('current-storage-path-text'),
     changeStorageBtn: $('change-storage-btn'),
     customStoragePath: $('custom-storage-path'),
+    closeStorageModalBtn: $('close-storage-modal-btn'),
+    preloadSettingToggle: $('preload-setting-toggle'),
 };
 
 // ========== Initialization ==========
@@ -194,20 +178,25 @@ async function init() {
     setupEventListeners();
     audio.volume = state.volume / 100;
     DOM.volumeSlider.value = state.volume;
-    
+
     // Set Autoplay checkbox state
     DOM.autoplayToggle.checked = state.autoplay;
-    
+
+    // Set Preload checkbox state
+    if (DOM.preloadSettingToggle) {
+        DOM.preloadSettingToggle.checked = state.preloadNextSong;
+    }
+
     await initOfflineDB(); // Initialize local database cache first
     await testApiConnection();
     loadTrending();
     renderFavorites();
     renderHistory();
-    
+
     // Check download directory setting
     const isNative = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
     let downloadPath = localStorage.getItem('sonicwave_download_path');
-    
+
     if (isNative && !downloadPath) {
         // Show storage location picker on native first open
         showStorageLocationModal(true);
@@ -220,7 +209,7 @@ async function init() {
         updateStoragePathDisplay();
         loadOfflineLibrary();
     }
-    
+
     loadPersonalizedRecommendations();
 
     // Initialize SPA navigation state
@@ -338,7 +327,7 @@ function extractSongData(song) {
 async function loadTrending() {
     const trendingQueries = ['Latest Hindi Songs', 'Top Hits 2025', 'Trending Bollywood'];
     const randomQuery = trendingQueries[Math.floor(Math.random() * trendingQueries.length)];
-    
+
     const songs = await searchSongs(randomQuery, 12);
     if (songs.length === 0) {
         DOM.trendingGrid.innerHTML = `
@@ -387,7 +376,7 @@ function createSongCard(data) {
 
 function handleSearch(query) {
     clearTimeout(state.searchTimeout);
-    
+
     if (!query.trim()) {
         DOM.searchEmpty.classList.remove('hidden');
         DOM.searchSectionsContainer.classList.add('hidden');
@@ -396,10 +385,10 @@ function handleSearch(query) {
     }
 
     switchView('search');
-    
+
     DOM.searchEmpty.classList.add('hidden');
     DOM.searchSectionsContainer.classList.remove('hidden');
-    
+
     DOM.saavnSearchResults.innerHTML = '<div class="loading-spinner"><div class="spinner"></div></div>';
 
     state.searchTimeout = setTimeout(async () => {
@@ -448,10 +437,10 @@ function createSongRow(data, number, context = 'search') {
 
     row.innerHTML = `
         <div class="row-number">
-            ${isPlaying 
-                ? '<div class="equalizer"><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div></div>' 
-                : `<span class="row-number-text">${number}</span><svg class="row-play-icon" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`
-            }
+            ${isPlaying
+            ? '<div class="equalizer"><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div></div>'
+            : `<span class="row-number-text">${number}</span><svg class="row-play-icon" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`
+        }
         </div>
         <div class="row-art">
             <img src="${data.imageUrl || 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"%3E%3Crect fill="%231a1a28" width="48" height="48"/%3E%3Ctext x="24" y="30" fill="%234a4a5e" font-size="18" text-anchor="middle"%3E♪%3C/text%3E%3C/svg%3E'}" alt="${data.name}" loading="lazy">
@@ -467,27 +456,30 @@ function createSongRow(data, number, context = 'search') {
                 <svg viewBox="0 0 24 24" fill="${isFav ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
             </button>
             ${context === 'offline'
-                ? `<button class="btn-icon delete-offline-btn" title="Delete Offline Song">
+            ? `<button class="btn-icon delete-offline-btn" title="Delete Offline Song">
                        <svg viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                    </button>`
-                : `<button class="btn-icon download-btn" title="Download Audio" style="${isOfflineSaved ? 'display: none;' : ''}">
-                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                   </button>`
+            : `<button class="btn-icon download-btn${isOfflineSaved ? ' downloaded' : ''}" title="${isOfflineSaved ? 'Downloaded' : 'Download Audio'}">
+                       ${isOfflineSaved
+                ? `<svg viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`
+                : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>`
             }
+                   </button>`
+        }
             <button class="btn-icon add-queue-btn" title="Add to Queue">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
             </button>
             <button class="btn-icon create-radio-btn" title="Start Song Radio">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="2"/><path d="M16.24 7.76a6 6 0 0 1 0 8.49m-8.48-.01a6 6 0 0 1 0-8.49m11.31-2.82a10 10 0 0 1 0 14.14m-14.14 0a10 10 0 0 1 0-14.14"/></svg>
             </button>
-            ${context === 'playlist-detail' 
-                ? `<button class="btn-icon remove-playlist-song-btn" title="Remove from Playlist">
+            ${context === 'playlist-detail'
+            ? `<button class="btn-icon remove-playlist-song-btn" title="Remove from Playlist">
                        <svg viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                    </button>`
-                : `<button class="btn-icon add-playlist-btn" title="Add to Playlist">
+            : `<button class="btn-icon add-playlist-btn" title="Add to Playlist">
                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="12" x2="15" y2="12"/><line x1="3" y1="6" x2="18" y2="6"/><line x1="3" y1="18" x2="15" y2="18"/><line x1="19" y1="13" x2="19" y2="19"/><line x1="16" y1="16" x2="22" y2="16"/></svg>
                    </button>`
-            }
+        }
         </div>
     `;
 
@@ -561,9 +553,14 @@ function createSongRow(data, number, context = 'search') {
         const dlBtn = row.querySelector('.download-btn');
         dlBtn.addEventListener('click', (e) => {
             e.stopPropagation();
+            if (dlBtn.classList.contains('downloaded')) {
+                showToast(`"${data.name}" is already saved offline!`, 'info');
+                return;
+            }
             handleDownload(data);
         });
     }
+
 
     return row;
 }
@@ -617,7 +614,7 @@ function playSong(songData) {
 
     // Show player bar
     DOM.playerBar.classList.remove('hidden');
-    
+
     // Update all views
     updateActiveSongHighlight();
     renderQueue();
@@ -828,12 +825,28 @@ function getOfflineSongMetadata(songId) {
     });
 }
 
+async function ensureStoragePermissions() {
+    if (!window.Capacitor || !window.Capacitor.Plugins || !window.Capacitor.Plugins.Filesystem) return true;
+    const Filesystem = window.Capacitor.Plugins.Filesystem;
+    try {
+        const check = await Filesystem.checkPermissions();
+        if (check.publicStorage !== 'granted') {
+            const req = await Filesystem.requestPermissions();
+            return req.publicStorage === 'granted';
+        }
+        return true;
+    } catch (e) {
+        console.error('Failed to check or request storage permissions:', e);
+        return false;
+    }
+}
+
 function saveOfflineSong(songData, audioBlob, imageBlob) {
     return new Promise(async (resolve, reject) => {
         if (!offlineDb) return reject('DB not initialized');
-        
+
         let localPath = null;
-        
+
         // Save to public Zid Music folder on external storage if Capacitor Filesystem is available
         if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Filesystem) {
             try {
@@ -841,40 +854,25 @@ function saveOfflineSong(songData, audioBlob, imageBlob) {
                 const filename = `${sanitizeFilename(songData.name)} - ${sanitizeFilename(songData.artist)}.mp3`;
                 const relativePath = state.downloadDirectory || 'Download/Zid Music';
                 localPath = `${relativePath}/${filename}`;
-                
+
                 showToast(`Saving "${songData.name}" to folder ${relativePath}...`, 'info');
-                const base64Data = await blobToBase64(audioBlob);
-                
-                // Write with a fallback: if it fails, request permissions and try one more time
-                try {
-                    await Filesystem.writeFile({
-                        path: localPath,
-                        data: base64Data,
-                        directory: 'EXTERNAL',
-                        recursive: true
-                    });
-                } catch (writeErr) {
-                    console.warn('Initial write failed, requesting permissions and trying again...', writeErr);
-                    
-                    // Request storage permissions
-                    try {
-                        const check = await Filesystem.checkPermissions();
-                        if (check.publicStorage !== 'granted') {
-                            await Filesystem.requestPermissions();
-                        }
-                    } catch (permErr) {
-                        console.error('Failed to request storage permissions:', permErr);
-                    }
-                    
-                    // Retry writing file
-                    await Filesystem.writeFile({
-                        path: localPath,
-                        data: base64Data,
-                        directory: 'EXTERNAL',
-                        recursive: true
-                    });
+
+                // Check and request storage permissions explicitly before writing
+                const hasPerms = await ensureStoragePermissions();
+                if (!hasPerms) {
+                    showToast('Storage permission denied. Storing inside app database instead.', 'warning');
+                    throw new Error('Storage permission denied');
                 }
-                
+
+                const base64Data = await blobToBase64(audioBlob);
+
+                await Filesystem.writeFile({
+                    path: localPath,
+                    data: base64Data,
+                    directory: 'EXTERNAL_STORAGE',
+                    recursive: true
+                });
+
                 console.log('Saved audio file successfully to public storage:', localPath);
                 showToast(`Saved to device storage: ${localPath}`, 'success');
                 // Clear the heavy audioBlob so we do not bloat the IndexedDB database
@@ -885,10 +883,10 @@ function saveOfflineSong(songData, audioBlob, imageBlob) {
                 localPath = null; // Storing as IndexedDB blob fallback
             }
         }
-        
+
         const transaction = offlineDb.transaction(OFFLINE_STORE_NAME, 'readwrite');
         const store = transaction.objectStore(OFFLINE_STORE_NAME);
-        
+
         const record = {
             id: songData.id,
             name: songData.name,
@@ -900,9 +898,12 @@ function saveOfflineSong(songData, audioBlob, imageBlob) {
             localPath: localPath,
             downloadedAt: Date.now()
         };
-        
+
         const request = store.put(record);
-        request.onsuccess = () => resolve(true);
+        request.onsuccess = () => {
+            updatePlayerDownloadButton();
+            resolve(true);
+        };
         request.onerror = (e) => reject(e.target.error);
     });
 }
@@ -927,7 +928,7 @@ async function deleteOfflineSong(songId) {
             try {
                 await Filesystem.deleteFile({
                     path: record.localPath,
-                    directory: 'EXTERNAL'
+                    directory: 'EXTERNAL_STORAGE'
                 });
                 console.log('Deleted physical audio file:', record.localPath);
             } catch (err) {
@@ -940,20 +941,26 @@ async function deleteOfflineSong(songId) {
 
     // 2. Delete entry from IndexedDB database
     const success = await deleteOfflineSongEntry(songId);
-    
+
     // Show download buttons for this song again across the app dynamically
     document.querySelectorAll(`.song-row[data-song-id="${songId}"]`).forEach(row => {
         const dlBtn = row.querySelector('.download-btn');
-        if (dlBtn) dlBtn.style.display = '';
+        if (dlBtn) {
+            dlBtn.classList.remove('downloaded');
+            dlBtn.setAttribute('title', 'Download Audio');
+            dlBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>`;
+        }
     });
-    
+
+    updatePlayerDownloadButton();
     return success;
 }
+
 
 function showStorageLocationModal(isFirstLaunch = false) {
     if (!DOM.storageLocationModal) return;
     DOM.storageLocationModal.classList.remove('hidden');
-    
+
     const currentPath = localStorage.getItem('sonicwave_download_path') || 'Download/Zid Music';
     const radioBtn = document.querySelector(`input[name="storage-preset"][value="${currentPath}"]`);
     if (radioBtn) {
@@ -985,7 +992,7 @@ function setupStorageSettings() {
         DOM.saveStorageLocationBtn.addEventListener('click', async () => {
             const selectedRadio = document.querySelector('input[name="storage-preset"]:checked');
             if (!selectedRadio) return;
-            
+
             let selectedPath = selectedRadio.value;
             if (selectedPath === 'custom') {
                 selectedPath = DOM.customStoragePath.value.trim();
@@ -994,19 +1001,19 @@ function setupStorageSettings() {
                     return;
                 }
             }
-            
+
             // Clean up paths
             selectedPath = selectedPath.replace(/\\/g, '/').replace(/\/+$/, '');
             if (selectedPath.startsWith('/')) {
                 selectedPath = selectedPath.substring(1);
             }
-            
+
             localStorage.setItem('sonicwave_download_path', selectedPath);
             state.downloadDirectory = selectedPath;
             updateStoragePathDisplay();
             hideStorageLocationModal();
-            showToast(`Download folder set to: ${selectedPath}`, 'success');
-            
+            showToast(`Settings applied! Download folder: ${selectedPath}`, 'success');
+
             loadOfflineLibrary();
         });
     }
@@ -1023,6 +1030,31 @@ function setupStorageSettings() {
         });
     });
 
+    // Close button modal
+    if (DOM.closeStorageModalBtn) {
+        DOM.closeStorageModalBtn.addEventListener('click', () => {
+            hideStorageLocationModal();
+        });
+    }
+
+    // Preload toggle switch listener
+    if (DOM.preloadSettingToggle) {
+        DOM.preloadSettingToggle.addEventListener('change', (e) => {
+            state.preloadNextSong = e.target.checked;
+            localStorage.setItem('sonicwave_preload_next', state.preloadNextSong);
+            showToast(state.preloadNextSong ? 'Preloading enabled' : 'Preloading disabled (Data Saver)', 'info');
+        });
+    }
+
+    // Close modal on click overlay background
+    if (DOM.storageLocationModal) {
+        DOM.storageLocationModal.addEventListener('click', (e) => {
+            if (e.target === DOM.storageLocationModal) {
+                hideStorageLocationModal();
+            }
+        });
+    }
+
     // Change folder button next to tab title
     if (DOM.changeStorageBtn) {
         DOM.changeStorageBtn.addEventListener('click', (e) => {
@@ -1038,13 +1070,13 @@ async function ensureDirectoryExists(path) {
     try {
         await Filesystem.stat({
             path: path,
-            directory: 'EXTERNAL'
+            directory: 'EXTERNAL_STORAGE'
         });
     } catch (e) {
         try {
             await Filesystem.mkdir({
                 path: path,
-                directory: 'EXTERNAL',
+                directory: 'EXTERNAL_STORAGE',
                 recursive: true
             });
             console.log('Created download directory:', path);
@@ -1053,6 +1085,7 @@ async function ensureDirectoryExists(path) {
         }
     }
 }
+
 
 function getOfflineSongs() {
     return new Promise((resolve, reject) => {
@@ -1082,7 +1115,7 @@ function clearAllBlobUrls() {
 // ========== Offline Library ==========
 async function loadOfflineLibrary() {
     clearAllBlobUrls();
-    
+
     // 1. Fetch pre-loaded offline script database (usually empty now)
     let scriptSongs = [];
     if (window.SONICWAVE_OFFLINE_DB) {
@@ -1094,18 +1127,23 @@ async function loadOfflineLibrary() {
     let filesOnDisk = [];
     const downloadDir = localStorage.getItem('sonicwave_download_path') || 'Download/Zid Music';
 
-    // 3. Scan physical directory if Filesystem is available
+    // 3. Scan physical directory if Filesystem is available and permissions are granted
     const hasFs = !!(window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Filesystem);
     if (hasFs) {
         const Filesystem = window.Capacitor.Plugins.Filesystem;
         try {
-            await ensureDirectoryExists(downloadDir);
-            const readdirResult = await Filesystem.readdir({
-                path: downloadDir,
-                directory: 'EXTERNAL'
-            });
-            filesOnDisk = readdirResult.files || [];
-            console.log('Scanned physical directory. Found files:', filesOnDisk);
+            const check = await Filesystem.checkPermissions();
+            if (check.publicStorage === 'granted') {
+                await ensureDirectoryExists(downloadDir);
+                const readdirResult = await Filesystem.readdir({
+                    path: downloadDir,
+                    directory: 'EXTERNAL_STORAGE'
+                });
+                filesOnDisk = readdirResult.files || [];
+                console.log('Scanned physical directory. Found files:', filesOnDisk);
+            } else {
+                console.log('Storage permissions not granted yet, skipping physical scans.');
+            }
         } catch (readdirErr) {
             console.error('Failed to read external directory:', readdirErr);
         }
@@ -1128,7 +1166,7 @@ async function loadOfflineLibrary() {
 
                 if (record.localPath && hasFs) {
                     const Filesystem = window.Capacitor.Plugins.Filesystem;
-                    
+
                     // Check if file still exists on disk
                     // Extract filename from localPath to check against scanned files
                     const pathParts = record.localPath.split('/');
@@ -1139,10 +1177,10 @@ async function loadOfflineLibrary() {
                         try {
                             const uriResult = await Filesystem.getUri({
                                 path: record.localPath,
-                                directory: 'EXTERNAL'
+                                directory: 'EXTERNAL_STORAGE'
                             });
                             songObj.audioUrl = window.Capacitor.convertFileSrc(uriResult.uri);
-                            
+
                             // Mark this file as matched (remove from filesOnDisk list so we do not list it twice)
                             filesOnDisk = filesOnDisk.filter(f => f.name !== filename);
                         } catch (uriErr) {
@@ -1187,7 +1225,7 @@ async function loadOfflineLibrary() {
                     const parts = displayTitle.split(' - ');
                     const name = parts[0] ? parts[0].trim() : displayTitle;
                     const artist = parts[1] ? parts[1].trim() : 'Local Audio';
-                    
+
                     const songObj = {
                         id: `local-${file.name}`,
                         name: name,
@@ -1211,7 +1249,9 @@ async function loadOfflineLibrary() {
     const allOfflineSongs = [...scriptSongs, ...localDBSongs];
     state.offlineSongs = allOfflineSongs;
     renderOfflineLibrary(allOfflineSongs);
+    updatePlayerDownloadButton();
 }
+
 
 function renderOfflineLibrary(songs) {
     if (songs.length === 0) {
@@ -1236,7 +1276,7 @@ function renderOfflineLibrary(songs) {
 
 async function handleDownload(songData) {
     if (!songData) return;
-    
+
     const isOffline = songData.audioUrl.startsWith('blob:') || songData.audioUrl.startsWith('songs/') || songData.isOfflineIndexed;
 
     if (isOffline) {
@@ -1289,7 +1329,7 @@ async function downloadSaavnSong(songData) {
     try {
         // Fetch audio stream
         const audioBlob = await fetchBlobWithTimeout(songData.audioUrl);
-        
+
         // Fetch image blob
         let imageBlob = null;
         if (songData.imageUrl) {
@@ -1303,11 +1343,15 @@ async function downloadSaavnSong(songData) {
         // Save to IndexedDB
         await saveOfflineSong(songData, audioBlob, imageBlob);
         showToast(`"${songData.name}" is now available offline!`, 'success');
-        
-        // Hide download buttons for this song across the app dynamically
+
+        // Update download buttons for this song across the app dynamically to check marks
         document.querySelectorAll(`.song-row[data-song-id="${songData.id}"]`).forEach(row => {
             const dlBtn = row.querySelector('.download-btn');
-            if (dlBtn) dlBtn.style.display = 'none';
+            if (dlBtn) {
+                dlBtn.classList.add('downloaded');
+                dlBtn.setAttribute('title', 'Downloaded');
+                dlBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`;
+            }
         });
 
         loadOfflineLibrary();
@@ -1329,16 +1373,17 @@ function updatePlayerUI() {
     DOM.playerSongName.textContent = song.name;
     renderArtistLinks(DOM.playerArtistName, song.artist);
     updatePlayerFavButton();
+    updatePlayerDownloadButton();
     document.title = `${song.name} — Zid Music`;
 
     // Sync Expanded Player Overlay
     DOM.overlaySongImg.src = song.imageUrl || '';
     DOM.overlayTitle.textContent = song.name;
     renderArtistLinks(DOM.overlayArtist, song.artist);
-    
+
     // Sync vinyl rotation state
     DOM.overlayVinylWrapper.style.animationPlayState = state.isPlaying ? 'running' : 'paused';
-    
+
     // Sync overlay favorite button state
     const isFav = state.favorites.some(f => f.id === song.id);
     DOM.overlayFavBtn.classList.toggle('active', isFav);
@@ -1367,7 +1412,42 @@ function updatePlayerFavButton() {
     }
 }
 
+function updatePlayerDownloadButton() {
+    const song = state.currentSong;
+    if (!song || !DOM.playerDownloadBtn) return;
+
+    const isOfflineSaved = state.offlineSongs && state.offlineSongs.some(s => {
+        return s.id === song.id || (s.name.toLowerCase() === song.name.toLowerCase() && s.artist.toLowerCase() === song.artist.toLowerCase());
+    });
+
+    const checkIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`;
+    const dlIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>`;
+
+    if (isOfflineSaved) {
+        DOM.playerDownloadBtn.classList.add('downloaded');
+        DOM.playerDownloadBtn.setAttribute('title', 'Downloaded');
+        DOM.playerDownloadBtn.innerHTML = checkIcon;
+
+        if (DOM.overlayDownloadBtn) {
+            DOM.overlayDownloadBtn.classList.add('downloaded');
+            DOM.overlayDownloadBtn.setAttribute('title', 'Downloaded');
+            DOM.overlayDownloadBtn.innerHTML = checkIcon;
+        }
+    } else {
+        DOM.playerDownloadBtn.classList.remove('downloaded');
+        DOM.playerDownloadBtn.setAttribute('title', 'Download Song');
+        DOM.playerDownloadBtn.innerHTML = dlIcon;
+
+        if (DOM.overlayDownloadBtn) {
+            DOM.overlayDownloadBtn.classList.remove('downloaded');
+            DOM.overlayDownloadBtn.setAttribute('title', 'Download Audio');
+            DOM.overlayDownloadBtn.innerHTML = dlIcon;
+        }
+    }
+}
+
 function updateActiveSongHighlight() {
+
     document.querySelectorAll('.song-row.playing').forEach(row => {
         row.classList.remove('playing');
     });
@@ -1410,7 +1490,7 @@ function updateMediaSession() {
     if (window.ZidMediaInterface && state.currentSong) {
         const duration = audio.duration || 0;
         const position = audio.currentTime || 0;
-        
+
         let ytDuration = 0;
         let ytPosition = 0;
         const isOnlineYt = state.currentSong.audioUrl.startsWith('yt-');
@@ -1446,7 +1526,7 @@ function updateMediaSession() {
     navigator.mediaSession.setActionHandler('nexttrack', () => playNext());
 }
 
-window.seekAudio = function(time) {
+window.seekAudio = function (time) {
     if (!state.currentSong) return;
     const isOnlineYt = state.currentSong.audioUrl.startsWith('yt-');
     if (isOnlineYt) {
@@ -1655,7 +1735,7 @@ function setupEventListeners() {
         const vol = parseInt(e.target.value);
         state.volume = vol;
         localStorage.setItem('sonicwave_volume', vol);
-        
+
         const isOnlineYt = state.currentSong && state.currentSong.audioUrl.startsWith('yt-');
         if (isOnlineYt) {
             if (ytPlayer && ytPlayerReady) ytPlayer.setVolume(vol);
@@ -1673,11 +1753,11 @@ function setupEventListeners() {
         } else {
             newVolume = state._prevVolume || 80;
         }
-        
+
         state.volume = newVolume;
         DOM.volumeSlider.value = newVolume;
         localStorage.setItem('sonicwave_volume', newVolume);
-        
+
         const isOnlineYt = state.currentSong && state.currentSong.audioUrl.startsWith('yt-');
         if (isOnlineYt) {
             if (ytPlayer && ytPlayerReady) ytPlayer.setVolume(newVolume);
@@ -1747,7 +1827,7 @@ function setupEventListeners() {
     });
 
     // --- Overlay & Autoplay Listeners ---
-    
+
     // Open/Close overlay
     DOM.playerSongInfo.addEventListener('click', openOverlay);
     DOM.overlayCloseBtn.addEventListener('click', closeOverlay);
@@ -1759,7 +1839,7 @@ function setupEventListeners() {
     DOM.overlayPlayBtn.addEventListener('click', togglePlay);
     DOM.overlayPrevBtn.addEventListener('click', playPrev);
     DOM.overlayNextBtn.addEventListener('click', playNext);
-    
+
     DOM.overlayFavBtn.addEventListener('click', () => {
         if (state.currentSong) {
             toggleFavorite(state.currentSong);
@@ -1833,7 +1913,7 @@ function setupEventListeners() {
         state.volume = vol;
         DOM.volumeSlider.value = vol;
         localStorage.setItem('sonicwave_volume', vol);
-        
+
         const isOnlineYt = state.currentSong && state.currentSong.audioUrl.startsWith('yt-');
         if (isOnlineYt) {
             if (ytPlayer && ytPlayerReady) ytPlayer.setVolume(vol);
@@ -1851,12 +1931,12 @@ function setupEventListeners() {
         } else {
             newVolume = state._prevVolume || 80;
         }
-        
+
         state.volume = newVolume;
         DOM.volumeSlider.value = newVolume;
         DOM.overlayVolumeSlider.value = newVolume;
         localStorage.setItem('sonicwave_volume', newVolume);
-        
+
         const isOnlineYt = state.currentSong && state.currentSong.audioUrl.startsWith('yt-');
         if (isOnlineYt) {
             if (ytPlayer && ytPlayerReady) ytPlayer.setVolume(newVolume);
@@ -1910,7 +1990,7 @@ function setupEventListeners() {
 
     // Playlist picker modal close
     DOM.closePlaylistPickerBtn?.addEventListener('click', closePlaylistPicker);
-    
+
     // Create new playlist and add track submit click
     DOM.createPlaylistSubmitBtn?.addEventListener('click', () => {
         const name = DOM.newPlaylistInput.value.trim();
@@ -1981,7 +2061,7 @@ function setupEventListeners() {
 
 function handleSongEnd() {
     const isOnlineYt = state.currentSong && state.currentSong.audioUrl.startsWith('yt-');
-    
+
     if (state.repeatMode === 2) {
         // Repeat one
         if (isOnlineYt) {
@@ -2103,7 +2183,7 @@ function closeLyrics(shouldPushState = true) {
 async function loadLyrics(songData) {
     DOM.lyricsContainer.innerHTML = '<div class="loading-spinner"><div class="spinner"></div></div>';
     state.lyrics = [];
-    
+
     const cleanTitle = songData.name
         .replace(/\(feat\.[^)]+\)/gi, '')
         .replace(/\(official[^)]+\)/gi, '')
@@ -2112,19 +2192,19 @@ async function loadLyrics(songData) {
         .replace(/official video/gi, '')
         .replace(/video/gi, '')
         .trim();
-        
+
     const cleanArtist = songData.artist
         .replace(/featuring[^,]+/gi, '')
         .split(',')[0]
         .trim();
 
     const searchUrl = `https://lrclib.net/api/get?track_name=${encodeURIComponent(cleanTitle)}&artist_name=${encodeURIComponent(cleanArtist)}`;
-    
+
     try {
         const res = await fetch(searchUrl);
         if (!res.ok) throw new Error('Lyrics search returned status ' + res.status);
         const data = await res.json();
-        
+
         if (data && (data.syncedLyrics || data.plainLyrics)) {
             if (data.syncedLyrics) {
                 state.lyrics = parseLrc(data.syncedLyrics);
@@ -2165,7 +2245,7 @@ function parseLrc(lrcText) {
     const lines = lrcText.split('\n');
     const lyrics = [];
     const timeRegex = /\[(\d{2}):(\d{2})\.(\d{2,3})\]/;
-    
+
     for (const line of lines) {
         const match = timeRegex.exec(line);
         if (match) {
@@ -2186,13 +2266,13 @@ function renderSyncedLyrics(lyricsArray) {
         showNoLyricsState();
         return;
     }
-    
+
     lyricsArray.forEach((line, idx) => {
         const lineEl = document.createElement('div');
         lineEl.className = 'lyric-line';
         lineEl.textContent = line.text || '🎵';
         lineEl.dataset.index = idx;
-        
+
         lineEl.addEventListener('click', () => {
             const isOnlineYt = state.currentSong && state.currentSong.audioUrl.startsWith('yt-');
             if (isOnlineYt) {
@@ -2202,7 +2282,7 @@ function renderSyncedLyrics(lyricsArray) {
             }
             syncLyrics(line.time);
         });
-        
+
         DOM.lyricsContainer.appendChild(lineEl);
     });
 }
@@ -2216,7 +2296,7 @@ function renderPlainLyrics(plainText) {
     wrapper.style.lineHeight = '1.8';
     wrapper.style.color = 'var(--text-secondary)';
     wrapper.style.whiteSpace = 'pre-wrap';
-    
+
     wrapper.textContent = plainText;
     DOM.lyricsContainer.appendChild(wrapper);
 }
@@ -2231,7 +2311,7 @@ function showNoLyricsState() {
 
 function syncLyrics(time) {
     if (!state.lyrics || state.lyrics.length === 0) return;
-    
+
     let activeIndex = -1;
     for (let i = 0; i < state.lyrics.length; i++) {
         if (time >= state.lyrics[i].time) {
@@ -2240,7 +2320,7 @@ function syncLyrics(time) {
             break;
         }
     }
-    
+
     if (activeIndex !== -1) {
         const lines = DOM.lyricsContainer.querySelectorAll('.lyric-line');
         if (lines.length > activeIndex) {
@@ -2249,13 +2329,13 @@ function syncLyrics(time) {
                 lines.forEach((line, idx) => {
                     line.classList.toggle('active', idx === activeIndex);
                 });
-                
+
                 const activeLine = lines[activeIndex];
                 const container = DOM.lyricsScrollWrapper;
                 const containerHeight = container.clientHeight;
                 const lineOffsetTop = activeLine.offsetTop;
                 const lineHeight = activeLine.clientHeight;
-                
+
                 container.scrollTop = lineOffsetTop - (containerHeight / 2) + (lineHeight / 2);
             }
         }
@@ -2266,9 +2346,9 @@ function syncLyrics(time) {
 async function handleAutoplay() {
     const current = state.currentSong;
     if (!current) return;
-    
+
     showToast('Queue ended. Loading similar recommendations...', 'info');
-    
+
     let saavnId = '';
     if (current.id.toString().startsWith('yt-')) {
         try {
@@ -2282,7 +2362,7 @@ async function handleAutoplay() {
     } else {
         saavnId = current.id;
     }
-    
+
     if (saavnId) {
         try {
             const res = await fetch(`${API_BASE}/songs/${saavnId}/suggestions`);
@@ -2293,10 +2373,10 @@ async function handleAutoplay() {
                     suggestions.forEach(song => {
                         state.queue.push(song);
                     });
-                    
+
                     showToast(`Autoplay added ${suggestions.length} related songs to your queue!`, 'success');
                     renderQueue();
-                    
+
                     state.queueIndex++;
                     playSong(state.queue[state.queueIndex]);
                     return;
@@ -2306,7 +2386,7 @@ async function handleAutoplay() {
             console.error('Autoplay recommendations fetch failed:', err);
         }
     }
-    
+
     try {
         const query = current.artist.split(',')[0].trim();
         const fallbackResults = await searchSongs(query, 5);
@@ -2324,7 +2404,7 @@ async function handleAutoplay() {
     } catch (e) {
         console.error('Autoplay search fallback failed:', e);
     }
-    
+
     showToast('No autoplay recommendations found. Stopping.', 'info');
     state.isPlaying = false;
     updatePlayButton();
@@ -2334,12 +2414,12 @@ async function handleAutoplay() {
 async function loadPersonalizedRecommendations() {
     const favs = state.favorites || [];
     const history = state.history || [];
-    
+
     if (favs.length === 0 && history.length === 0) {
         DOM.recommendedSection.style.display = 'none';
         return;
     }
-    
+
     // Combine all history and favorites to find artists
     const allTracks = [...favs, ...history];
     const artists = allTracks.map(s => {
@@ -2347,25 +2427,25 @@ async function loadPersonalizedRecommendations() {
         // Split and take primary artist
         return s.artist.split(',')[0].trim();
     }).filter(Boolean);
-    
+
     if (artists.length === 0) {
         DOM.recommendedSection.style.display = 'none';
         return;
     }
-    
+
     // Compute frequency counts of artists to find top preferences
     const artistCounts = {};
     artists.forEach(a => {
         artistCounts[a] = (artistCounts[a] || 0) + 1;
     });
-    
+
     // Convert to sorted array of [artist, count]
     const sortedArtists = Object.keys(artistCounts).sort((a, b) => artistCounts[b] - artistCounts[a]);
-    
+
     // Pick one artist from the top 3 most popular, or from whatever is available
     const poolSize = Math.min(3, sortedArtists.length);
     const chosenArtist = sortedArtists[Math.floor(Math.random() * poolSize)];
-    
+
     try {
         const songs = await searchSongs(chosenArtist, 12);
         // Exclude songs already in favorites or recently played
@@ -2373,14 +2453,14 @@ async function loadPersonalizedRecommendations() {
             .map(s => extractSongData(s))
             .filter(song => !favs.some(f => f.id === song.id) && !history.some(h => h.id === song.id))
             .slice(0, 6);
-            
+
         if (filtered.length > 0) {
             DOM.personalizedGrid.innerHTML = '';
             filtered.forEach(song => {
                 const card = createSongCard(song);
                 DOM.personalizedGrid.appendChild(card);
             });
-            
+
             DOM.recommendedSection.style.display = 'block';
             const titleEl = DOM.recommendedSection.querySelector('.section-title');
             if (titleEl) {
@@ -2400,18 +2480,19 @@ async function loadPersonalizedRecommendations() {
 
 // ========== Seamless Preloading ==========
 function checkPreload(currentTime, duration) {
+    if (!state.preloadNextSong) return; // Skip if preloading is disabled to save data
     if (!duration || (!state.autoplay && state.queueIndex >= state.queue.length - 1)) return;
-    
+
     // Trigger preload 20 seconds before end
     if (duration - currentTime <= 20) {
         let nextSong = null;
         if (state.queueIndex < state.queue.length - 1) {
             nextSong = state.queue[state.queueIndex + 1];
         }
-        
+
         if (nextSong && nextSong.id !== state.nextPreloadedId) {
             state.nextPreloadedId = nextSong.id;
-            
+
             // YouTube has its own buffer. Preload JioSaavn / Offline direct M4A streams
             const isYt = nextSong.audioUrl.startsWith('yt-');
             if (!isYt) {
@@ -2427,7 +2508,7 @@ function checkPreload(currentTime, duration) {
 function applyDynamicBackground(song) {
     const color1 = stringToColor(song.name, 50, 12);
     const color2 = stringToColor(song.artist || '', 40, 8);
-    
+
     DOM.playerOverlay.style.backgroundImage = `radial-gradient(circle at 50% 30%, ${color1} 0%, ${color2} 100%)`;
 }
 
@@ -2443,12 +2524,12 @@ function stringToColor(str, s = 50, l = 15) {
 // ========== Sleep Timer System ==========
 function startSleepTimer(minutes) {
     clearSleepTimer();
-    
+
     state.sleepTimeRemaining = minutes;
     DOM.sleepTimerBadge.style.display = 'block';
     DOM.sleepTimerBadge.textContent = `${minutes}m`;
     showToast(`Sleep timer set for ${minutes} minutes.`, 'success');
-    
+
     // Decrement countdown every minute
     state.sleepTimerId = setInterval(() => {
         state.sleepTimeRemaining--;
@@ -2480,17 +2561,17 @@ function clearSleepTimer() {
 // ========== Overlay Queue Manager ==========
 function renderOverlayQueue() {
     DOM.overlayQueueContainer.innerHTML = '';
-    
+
     if (state.queue.length === 0) {
         DOM.overlayQueueContainer.innerHTML = '<div class="lyrics-empty"><p>Queue is empty</p></div>';
         return;
     }
-    
+
     state.queue.forEach((song, index) => {
         const isActive = index === state.queueIndex;
         const row = document.createElement('div');
         row.className = `overlay-queue-row${isActive ? ' active' : ''}`;
-        
+
         row.innerHTML = `
             <img src="${song.imageUrl || 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"%3E%3Crect fill="%231a1a28" width="48" height="48"/%3E%3Ctext x="24" y="30" fill="%234a4a5e" font-size="18" text-anchor="middle"%3E♪%3C/text%3E%3C/svg%3E'}" alt="${song.name}" class="overlay-queue-art">
             <div class="overlay-queue-meta">
@@ -2509,28 +2590,28 @@ function renderOverlayQueue() {
                 </button>
             </div>
         `;
-        
+
         row.addEventListener('click', (e) => {
             if (e.target.closest('.btn-reorder') || e.target.closest('.btn-remove-queue')) return;
             state.queueIndex = index;
             playSong(song);
         });
-        
+
         row.querySelector('.btn-move-up').addEventListener('click', (e) => {
             e.stopPropagation();
             moveQueueItem(index, -1);
         });
-        
+
         row.querySelector('.btn-move-down').addEventListener('click', (e) => {
             e.stopPropagation();
             moveQueueItem(index, 1);
         });
-        
+
         row.querySelector('.btn-remove-queue').addEventListener('click', (e) => {
             e.stopPropagation();
             removeQueueItem(index);
         });
-        
+
         DOM.overlayQueueContainer.appendChild(row);
     });
 }
@@ -2538,17 +2619,17 @@ function renderOverlayQueue() {
 function moveQueueItem(index, direction) {
     const targetIndex = index + direction;
     if (targetIndex < 0 || targetIndex >= state.queue.length) return;
-    
+
     const temp = state.queue[index];
     state.queue[index] = state.queue[targetIndex];
     state.queue[targetIndex] = temp;
-    
+
     if (state.queueIndex === index) {
         state.queueIndex = targetIndex;
     } else if (state.queueIndex === targetIndex) {
         state.queueIndex = index;
     }
-    
+
     renderQueue();
     renderOverlayQueue();
 }
@@ -2558,13 +2639,13 @@ function removeQueueItem(index) {
         showToast("Cannot remove the currently playing song from queue.", "warning");
         return;
     }
-    
+
     state.queue.splice(index, 1);
-    
+
     if (index < state.queueIndex) {
         state.queueIndex--;
     }
-    
+
     renderQueue();
     renderOverlayQueue();
     showToast("Song removed from queue.", "success");
@@ -2603,7 +2684,7 @@ function addSongToPlaylist(playlistName, song) {
     state.playlists[playlistName].push(song);
     localStorage.setItem('sonicwave_playlists', JSON.stringify(state.playlists));
     showToast(`Added to "${playlistName}"`, 'success');
-    
+
     // Update recommendations since user profile changed
     loadPersonalizedRecommendations();
 }
@@ -2613,7 +2694,7 @@ function removeSongFromPlaylist(playlistName, songId) {
     state.playlists[playlistName] = state.playlists[playlistName].filter(s => s.id !== songId);
     localStorage.setItem('sonicwave_playlists', JSON.stringify(state.playlists));
     showToast("Removed from playlist", "info");
-    
+
     // Re-render list
     showPlaylistDetails(playlistName);
 }
@@ -2654,7 +2735,7 @@ function renderPlaylists() {
         const songs = state.playlists[name];
         const card = document.createElement('div');
         card.className = 'playlist-card';
-        
+
         card.innerHTML = `
             <div style="width: 100%; aspect-ratio: 1; background: linear-gradient(135deg, var(--accent-purple) 0%, var(--accent-blue) 100%); border-radius: var(--radius-md); display: flex; align-items: center; justify-content: center; position: relative; box-shadow: var(--shadow-sm);">
                 <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" style="width: 40px; height: 40px;"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
@@ -2705,14 +2786,14 @@ function showPlaylistDetails(name, shouldPushState = true) {
 // ========== Playlist Picker Modal ==========
 function openPlaylistPicker(song) {
     if (!DOM.playlistPickerModal) return;
-    
+
     // Save song data to modal dataset so we know what song to add
     DOM.playlistPickerModal.dataset.songData = JSON.stringify(song);
     DOM.newPlaylistInput.value = '';
-    
+
     DOM.playlistPickerList.innerHTML = '';
     const keys = Object.keys(state.playlists);
-    
+
     if (keys.length === 0) {
         DOM.playlistPickerList.innerHTML = `
             <div style="text-align: center; color: var(--text-secondary); font-size: 0.9rem; padding: 10px 0;">
@@ -2731,7 +2812,7 @@ function openPlaylistPicker(song) {
             DOM.playlistPickerList.appendChild(btn);
         });
     }
-    
+
     DOM.playlistPickerModal.classList.remove('hidden');
 }
 
@@ -2833,13 +2914,13 @@ async function songIdentifyFallback() {
         if (matchingSongs && matchingSongs.length > 0) {
             const bestMatch = extractSongData(matchingSongs[0]);
             showToast(`Found: ${bestMatch.name} by ${bestMatch.artist}`, 'success');
-            
+
             DOM.searchInput.value = lyrics.trim();
             switchView('search');
             DOM.searchEmpty.classList.add('hidden');
             DOM.searchSectionsContainer.classList.remove('hidden');
             renderSaavnSearchResults(matchingSongs);
-            
+
             playSong(bestMatch);
         } else {
             showToast('No matching song found. Try different lyrics.', 'error');
@@ -2853,7 +2934,7 @@ function startVoiceSearch() {
     switchView('search');
     DOM.searchInput.value = '';
     DOM.searchInput.focus();
-    
+
     // On mobile, the keyboard will appear with its own mic button
     const isMobile = window.innerWidth <= 768;
     if (isMobile) {
@@ -2871,7 +2952,7 @@ function startVoiceSearch() {
 
 function startWebSpeechSearch() {
     if (recognition) {
-        try { recognition.abort(); } catch(e) {}
+        try { recognition.abort(); } catch (e) { }
     }
 
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -2909,7 +2990,7 @@ function startWebSpeechSearch() {
     recognition.onerror = (event) => {
         console.error('Speech recognition error:', event.error);
         if (overlayEl) overlayEl.classList.add('hidden');
-        
+
         if (event.error === 'not-allowed') {
             showToast('Mic permission denied. Use your keyboard mic instead.', 'warning');
         } else if (event.error === 'network') {
@@ -2928,7 +3009,7 @@ function startWebSpeechSearch() {
 
     try {
         recognition.start();
-    } catch(e) {
+    } catch (e) {
         console.error('Failed to start recognition:', e);
         if (overlayEl) overlayEl.classList.add('hidden');
         showToast('Voice not available. Use your keyboard mic button.', 'warning');
@@ -2942,9 +3023,9 @@ function startSongIdentification() {
     DOM.searchInput.value = '';
     DOM.searchInput.setAttribute('placeholder', 'Type lyrics or song name to identify...');
     DOM.searchInput.focus();
-    
+
     showToast('Type some lyrics or the song name, then press Enter to find it!', 'info');
-    
+
     // Restore original placeholder after the user leaves the input
     const restorePlaceholder = () => {
         DOM.searchInput.setAttribute('placeholder', 'Search for songs, artists, albums...');
@@ -2956,7 +3037,7 @@ function startSongIdentification() {
 function cancelSpeechRecognition() {
     activeRecognitionMode = '';
     if (recognition) {
-        try { recognition.abort(); } catch(e) {}
+        try { recognition.abort(); } catch (e) { }
         recognition = null;
     }
     const overlayEl = DOM.listeningOverlay || $('listening-overlay');
@@ -2995,7 +3076,7 @@ async function showArtistView(artistName, shouldPushState = true) {
 
         DOM.artistMetaInfo.textContent = `${songs.length} top tracks`;
         DOM.artistSongsList.innerHTML = '';
-        
+
         songs.forEach((song, index) => {
             const row = createSongRow(song, index + 1, 'artist');
             DOM.artistSongsList.appendChild(row);
@@ -3017,20 +3098,20 @@ async function showArtistView(artistName, shouldPushState = true) {
 
 async function createTrackRadio(songData) {
     if (!songData || !songData.id) return;
-    
+
     showToast(`Creating radio for "${songData.name}"...`, 'info');
-    
+
     try {
         const res = await fetch(`${API_BASE}/songs/${songData.id}/suggestions`);
         const json = await res.json();
-        
+
         if (json.success && json.data && json.data.length > 0) {
             const suggestions = json.data.map(s => extractSongData(s));
-            
+
             // Queue format: target song first, followed by suggestions!
             state.queue = [songData, ...suggestions];
             state.queueIndex = 0;
-            
+
             playSong(songData);
             renderQueue();
             showToast(`Song Radio started with ${suggestions.length} suggestions!`, 'success');
@@ -3049,11 +3130,11 @@ function renderArtistLinks(containerElement, artistString) {
         containerElement.innerHTML = '';
         return;
     }
-    
+
     // Split on comma-separated artists
     const names = artistString.split(',').map(n => n.trim()).filter(Boolean);
     containerElement.innerHTML = '';
-    
+
     names.forEach((name, idx) => {
         const span = document.createElement('span');
         span.className = 'clickable-artist-link';
@@ -3062,9 +3143,9 @@ function renderArtistLinks(containerElement, artistString) {
             e.stopPropagation();
             showArtistView(name);
         });
-        
+
         containerElement.appendChild(span);
-        
+
         if (idx < names.length - 1) {
             containerElement.appendChild(document.createTextNode(', '));
         }
