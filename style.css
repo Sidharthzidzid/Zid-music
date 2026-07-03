@@ -2210,3 +2210,205 @@ input:checked + .slider-round:before {
     color: white;
 }
 
+/* === Voice Search & Listening Overlay === */
+.search-mic-btn {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 6px;
+    margin-right: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    transition: all 0.2s ease;
+}
+.search-mic-btn:hover {
+    color: var(--primary);
+    background: rgba(255, 255, 255, 0.05);
+}
+.search-mic-btn svg {
+    width: 18px;
+    height: 18px;
+}
+
+.listening-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(10, 10, 12, 0.85);
+    backdrop-filter: blur(15px);
+    -webkit-backdrop-filter: blur(15px);
+    z-index: 10000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 1;
+    transition: opacity 0.3s ease;
+}
+.listening-overlay.hidden {
+    display: none !important;
+}
+.listening-content {
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 20px;
+    padding: 30px;
+}
+.listening-ripple {
+    position: relative;
+    width: 100px;
+    height: 100px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 20px;
+}
+.ripple-circle {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    border: 2px solid var(--primary);
+    border-radius: 50%;
+    opacity: 0;
+    animation: listeningPulse 2s infinite ease-out;
+}
+.ripple-circle:nth-child(2) {
+    animation-delay: 0.6s;
+}
+.ripple-circle:nth-child(3) {
+    animation-delay: 1.2s;
+}
+.listening-mic-icon {
+    width: 48px;
+    height: 48px;
+    color: white;
+    z-index: 2;
+    animation: floatIcon 3s ease-in-out infinite;
+}
+@keyframes listeningPulse {
+    0% {
+        transform: scale(0.6);
+        opacity: 0.8;
+    }
+    100% {
+        transform: scale(1.8);
+        opacity: 0;
+    }
+}
+@keyframes floatIcon {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-8px); }
+}
+.listening-title {
+    font-family: var(--font-display);
+    font-size: 1.8rem;
+    font-weight: 800;
+    margin: 0;
+    color: white;
+}
+.listening-subtitle {
+    color: var(--text-muted);
+    font-size: 1rem;
+    margin: 0;
+}
+.btn-cancel-listening {
+    margin-top: 15px;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid var(--border-subtle);
+    color: var(--text-primary);
+    padding: 10px 24px;
+    border-radius: 30px;
+    cursor: pointer;
+    font-weight: 600;
+    transition: all 0.2s ease;
+}
+.btn-cancel-listening:hover {
+    background: #ef4444;
+    border-color: #ef4444;
+    color: white;
+}
+
+/* === Artist View Profile Section === */
+.artist-header-banner {
+    position: relative;
+    padding: 60px 32px 30px;
+    margin: 20px 0;
+    border-radius: var(--radius-lg);
+    background: linear-gradient(135deg, rgba(162, 28, 175, 0.45), rgba(76, 29, 149, 0.35));
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    overflow: hidden;
+}
+.artist-header-info {
+    position: relative;
+    z-index: 2;
+}
+.artist-badge {
+    background: var(--primary);
+    color: white;
+    font-size: 0.75rem;
+    font-weight: 700;
+    padding: 4px 8px;
+    border-radius: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+.artist-name-title {
+    font-family: var(--font-display);
+    font-size: 3rem;
+    font-weight: 900;
+    margin: 10px 0;
+    color: white;
+    letter-spacing: -0.02em;
+    text-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+.artist-meta-info {
+    color: var(--text-muted);
+    font-size: 0.95rem;
+    margin: 0;
+    font-weight: 500;
+}
+.artist-action-bar {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    margin: 25px 0;
+}
+.btn-play-all {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--gradient-primary);
+    color: white;
+    border: none;
+    font-size: 1rem;
+    font-weight: 700;
+    padding: 12px 28px;
+    border-radius: 30px;
+    cursor: pointer;
+    transition: transform var(--transition-fast);
+}
+.btn-play-all:hover {
+    transform: scale(1.04);
+}
+.btn-play-all svg {
+    width: 18px;
+    height: 18px;
+}
+
+/* Clickable Artist link styling */
+.clickable-artist {
+    cursor: pointer;
+    transition: color var(--transition-fast);
+}
+.clickable-artist:hover {
+    color: var(--primary) !important;
+    text-decoration: underline;
+}
+
+
