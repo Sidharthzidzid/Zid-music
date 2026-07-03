@@ -68,6 +68,10 @@
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                     <span>Downloads</span>
                 </button>
+                <button class="nav-item" id="nav-identify">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a7 7 0 1 0 10 10"/><circle cx="12" cy="12" r="3"/><path d="M12 9a3 3 0 0 1 3 3"/></svg>
+                    <span>Identify Song</span>
+                </button>
             </nav>
 
             <div class="sidebar-footer">
@@ -88,6 +92,9 @@
                 <div class="search-container">
                     <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
                     <input type="text" id="search-input" class="search-input" placeholder="Search for songs, artists, albums..." autocomplete="off">
+                    <button id="search-mic-btn" class="search-mic-btn" title="Voice Search">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg>
+                    </button>
                     <div class="search-shortcut">
                         <kbd>Ctrl</kbd><kbd>K</kbd>
                     </div>
@@ -271,6 +278,29 @@
                         <div id="playlist-songs-list" class="songs-list">
                             <!-- Songs within the selected playlist will be dynamically injected here -->
                         </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Artist View -->
+            <section id="view-artist" class="view">
+                <div class="view-content">
+                    <div class="artist-header-banner" id="artist-header-banner">
+                        <div class="artist-header-info">
+                            <span class="artist-badge">Verified Artist</span>
+                            <h1 class="artist-name-title" id="artist-name-title">Artist Name</h1>
+                            <p class="artist-meta-info" id="artist-meta-info">Top Songs</p>
+                        </div>
+                    </div>
+                    <div class="artist-action-bar">
+                        <button id="artist-play-all-btn" class="btn-play-all">
+                            <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                            Play
+                        </button>
+                        <button id="artist-back-btn" class="btn-ghost" style="border-radius: var(--radius-sm);">Back</button>
+                    </div>
+                    <div id="artist-songs-list" class="songs-list">
+                        <!-- Artist songs will be dynamically injected here -->
                     </div>
                 </div>
             </section>
@@ -505,5 +535,19 @@
             });
         }
     </script>
+    <!-- Listening Overlay for Voice Search / Song Identification -->
+    <div id="listening-overlay" class="listening-overlay hidden">
+        <div class="listening-content">
+            <div class="listening-ripple">
+                <div class="ripple-circle"></div>
+                <div class="ripple-circle"></div>
+                <div class="ripple-circle"></div>
+                <svg class="listening-mic-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg>
+            </div>
+            <h2 class="listening-title" id="listening-title">Listening...</h2>
+            <p class="listening-subtitle" id="listening-subtitle">Try humming or saying song lyrics.</p>
+            <button class="btn-cancel-listening" id="cancel-listening-btn">Cancel</button>
+        </div>
+    </div>
 </body>
 </html>
