@@ -643,24 +643,30 @@ function stopYtProgressInterval() {
 
 // ========== Resolve YouTube Audio URL Direct Stream ==========
 async function resolveYtAudioUrl(videoId) {
-    for (const api of PIPED_APIS) {
-        try {
-            const res = await fetch(`${api}/streams/${videoId}`, {
-                signal: AbortSignal.timeout(5000)
-            });
-            if (!res.ok) continue;
-            const data = await res.json();
-            if (data.audioStreams && data.audioStreams.length > 0) {
-                const stream = data.audioStreams.find(s => s.mimeType.includes('audio/mp4')) || data.audioStreams[0];
-                if (stream.url) {
-                    return stream.url;
-                }
-            }
-        } catch (e) {
-            console.warn(`Failed to resolve YT audio stream from ${api}:`, e);
-        }
+    const endpoints = PIPED_APIS.map(api => `${api}/streams/${videoId}`);
+    
+    // Race Piped APIs in parallel! Fastest one wins.
+    try {
+        const promises = endpoints.map(url => 
+            fetch(url, { signal: AbortSignal.timeout(4000) })
+                .then(res => {
+                    if (!res.ok) throw new Error('Not ok');
+                    return res.json();
+                })
+                .then(data => {
+                    if (data.audioStreams && data.audioStreams.length > 0) {
+                        const stream = data.audioStreams.find(s => s.mimeType.includes('audio/mp4')) || data.audioStreams[0];
+                        if (stream.url) return stream.url;
+                    }
+                    throw new Error('No stream');
+                })
+        );
+        return await Promise.any(promises);
+    } catch (e) {
+        console.warn('Parallel Piped stream resolution failed, trying Cobalt:', e);
     }
     
+    // Fallback to Cobalt
     try {
         const cobaltRes = await fetch('https://api.cobalt.tools/api/json', {
             method: 'POST',
@@ -672,13 +678,11 @@ async function resolveYtAudioUrl(videoId) {
                 url: `https://www.youtube.com/watch?v=${videoId}`,
                 isAudioOnly: true
             }),
-            signal: AbortSignal.timeout(6000)
+            signal: AbortSignal.timeout(5000)
         });
         if (cobaltRes.ok) {
             const cobaltData = await cobaltRes.json();
-            if (cobaltData.url) {
-                return cobaltData.url;
-            }
+            if (cobaltData.url) return cobaltData.url;
         }
     } catch (e) {
         console.warn('Cobalt stream resolution failed:', e);
