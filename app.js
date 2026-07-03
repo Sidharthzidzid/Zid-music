@@ -160,6 +160,22 @@ const DOM = {
     playlistPickerList: $('playlist-picker-list'),
     newPlaylistInput: $('new-playlist-input'),
     createPlaylistSubmitBtn: $('create-playlist-submit-btn'),
+
+    // Voice & Identification references
+    searchMicBtn: $('search-mic-btn'),
+    listeningOverlay: $('listening-overlay'),
+    listeningTitle: $('listening-title'),
+    listeningSubtitle: $('listening-subtitle'),
+    cancelListeningBtn: $('cancel-listening-btn'),
+    navIdentify: $('nav-identify'),
+    
+    // Artist View references
+    viewArtist: $('view-artist'),
+    artistNameTitle: $('artist-name-title'),
+    artistMetaInfo: $('artist-meta-info'),
+    artistPlayAllBtn: $('artist-play-all-btn'),
+    artistBackBtn: $('artist-back-btn'),
+    artistSongsList: $('artist-songs-list'),
 };
 
 // ========== Initialization ==========
@@ -327,9 +343,19 @@ function createSongCard(data) {
             </div>
         </div>
         <div class="card-title" title="${data.name}">${data.name}</div>
-        <div class="card-artist" title="${data.artist}">${data.artist}</div>
+        <div class="card-artist" title="${data.artist}"><span class="clickable-artist">${data.artist}</span></div>
     `;
-    card.addEventListener('click', () => playSong(data));
+    card.addEventListener('click', (e) => {
+        if (e.target.closest('.clickable-artist')) return;
+        playSong(data);
+    });
+    const artistSpan = card.querySelector('.clickable-artist');
+    if (artistSpan) {
+        artistSpan.addEventListener('click', (e) => {
+            e.stopPropagation();
+            showArtistView(data.artist);
+        });
+    }
     return card;
 }
 
@@ -405,7 +431,7 @@ function createSongRow(data, number, context = 'search') {
         </div>
         <div class="row-info">
             <div class="row-title">${data.name}${badgeHTML}</div>
-            <div class="row-artist">${data.artist}</div>
+            <div class="row-artist"><span class="clickable-artist">${data.artist}</span></div>
         </div>
         <div class="row-album">${data.album}</div>
         <div class="row-duration">${duration}</div>
@@ -424,6 +450,9 @@ function createSongRow(data, number, context = 'search') {
             <button class="btn-icon add-queue-btn" title="Add to Queue">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
             </button>
+            <button class="btn-icon create-radio-btn" title="Start Song Radio">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="2"/><path d="M16.24 7.76a6 6 0 0 1 0 8.49m-8.48-.01a6 6 0 0 1 0-8.49m11.31-2.82a10 10 0 0 1 0 14.14m-14.14 0a10 10 0 0 1 0-14.14"/></svg>
+            </button>
             ${context === 'playlist-detail' 
                 ? `<button class="btn-icon remove-playlist-song-btn" title="Remove from Playlist">
                        <svg viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
@@ -437,9 +466,18 @@ function createSongRow(data, number, context = 'search') {
 
     // Click to play
     row.addEventListener('click', (e) => {
-        if (e.target.closest('.btn-icon')) return;
+        if (e.target.closest('.btn-icon') || e.target.closest('.clickable-artist')) return;
         playSong(data);
     });
+
+    // Clickable artist link
+    const artistSpan = row.querySelector('.clickable-artist');
+    if (artistSpan) {
+        artistSpan.addEventListener('click', (e) => {
+            e.stopPropagation();
+            showArtistView(data.artist);
+        });
+    }
 
     // Favorite button
     const favBtn = row.querySelector('.fav-btn');
@@ -457,6 +495,15 @@ function createSongRow(data, number, context = 'search') {
         e.stopPropagation();
         addToQueue(data);
     });
+
+    // Start Song Radio button
+    const radioBtn = row.querySelector('.create-radio-btn');
+    if (radioBtn) {
+        radioBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            createTrackRadio(data);
+        });
+    }
 
     // Playlist Add/Remove button
     if (context === 'playlist-detail') {
@@ -1164,9 +1211,39 @@ function setupEventListeners() {
     // Navigation
     document.querySelectorAll('.nav-item').forEach(btn => {
         btn.addEventListener('click', () => {
-            switchView(btn.dataset.view);
+            if (btn.dataset.view) {
+                switchView(btn.dataset.view);
+            }
         });
     });
+
+    // Identify Song Navigation Action
+    if (DOM.navIdentify) {
+        DOM.navIdentify.addEventListener('click', () => {
+            startSongIdentification();
+        });
+    }
+
+    // Search Microphone Button Action
+    if (DOM.searchMicBtn) {
+        DOM.searchMicBtn.addEventListener('click', () => {
+            startVoiceSearch();
+        });
+    }
+
+    // Cancel Listening Button Action
+    if (DOM.cancelListeningBtn) {
+        DOM.cancelListeningBtn.addEventListener('click', () => {
+            cancelSpeechRecognition();
+        });
+    }
+
+    // Artist view Actions
+    if (DOM.artistBackBtn) {
+        DOM.artistBackBtn.addEventListener('click', () => {
+            history.back();
+        });
+    }
 
     // Search
     DOM.searchInput.addEventListener('input', (e) => handleSearch(e.target.value));
@@ -2368,8 +2445,242 @@ function handlePopState(event) {
         if (DOM.createPlaylistBtn) DOM.createPlaylistBtn.style.display = 'block';
     }
 
-    // Sync view
+    // Sync view / artist profile
     if (targetState.view) {
-        switchView(targetState.view, false);
+        if (targetState.view === 'artist' && targetState.artist) {
+            showArtistView(targetState.artist, false);
+        } else {
+            switchView(targetState.view, false);
+        }
+    }
+}
+
+// ========== Voice Search, Song Identification & Radios ==========
+let recognition = null;
+let activeRecognitionMode = '';
+
+function startVoiceSearch() {
+    if (recognition) {
+        try { recognition.abort(); } catch(e) {}
+    }
+
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+        showToast('Voice Search is not supported in this browser.', 'error');
+        return;
+    }
+
+    DOM.listeningTitle.textContent = 'Listening for voice search...';
+    DOM.listeningSubtitle.textContent = 'Say the name of a song, artist, or album';
+    DOM.listeningOverlay.classList.remove('hidden');
+
+    activeRecognitionMode = 'search';
+
+    recognition = new SpeechRecognition();
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    recognition.lang = 'en-US';
+
+    recognition.onresult = (event) => {
+        const query = event.results[0][0].transcript;
+        DOM.listeningOverlay.classList.add('hidden');
+        if (query) {
+            DOM.searchInput.value = query;
+            handleSearch(query);
+            showToast(`Searching for "${query}"`, 'info');
+        }
+    };
+
+    recognition.onerror = (event) => {
+        console.error('Speech recognition error:', event.error);
+        if (event.error === 'not-allowed') {
+            showToast('Microphone permission denied.', 'error');
+        } else {
+            showToast('Voice search failed. Try again.', 'error');
+        }
+        DOM.listeningOverlay.classList.add('hidden');
+    };
+
+    recognition.onend = () => {
+        DOM.listeningOverlay.classList.add('hidden');
+    };
+
+    try {
+        recognition.start();
+    } catch(e) {
+        console.error('Failed to start recognition:', e);
+        DOM.listeningOverlay.classList.add('hidden');
+    }
+}
+
+function startSongIdentification() {
+    if (recognition) {
+        try { recognition.abort(); } catch(e) {}
+    }
+
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+        showToast('Song identification is not supported in this browser.', 'error');
+        return;
+    }
+
+    DOM.listeningTitle.textContent = 'Identifying Song...';
+    DOM.listeningSubtitle.textContent = 'Hum a melody or speak/sing lyrics loudly';
+    DOM.listeningOverlay.classList.remove('hidden');
+
+    activeRecognitionMode = 'identify';
+
+    recognition = new SpeechRecognition();
+    recognition.continuous = true;
+    recognition.interimResults = false;
+    recognition.lang = 'en-US';
+
+    let capturedPhrases = [];
+
+    recognition.onresult = (event) => {
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+            if (event.results[i].isFinal) {
+                const text = event.results[i][0].transcript;
+                if (text && text.trim()) {
+                    capturedPhrases.push(text.trim());
+                }
+            }
+        }
+    };
+
+    recognition.onerror = (event) => {
+        console.error('Song identification speech error:', event.error);
+        if (event.error === 'not-allowed') {
+            showToast('Microphone permission denied.', 'error');
+        }
+    };
+
+    // Listen for 6 seconds, then stop and match
+    setTimeout(() => {
+        if (activeRecognitionMode === 'identify' && recognition) {
+            try { recognition.stop(); } catch(e) {}
+        }
+    }, 6000);
+
+    recognition.onend = async () => {
+        DOM.listeningOverlay.classList.add('hidden');
+        if (activeRecognitionMode !== 'identify') return;
+
+        const combinedText = capturedPhrases.join(' ');
+        if (!combinedText.trim()) {
+            showToast('Could not hear anything clearly. Try again.', 'error');
+            return;
+        }
+
+        showToast('Matching audio metadata...', 'info');
+        const matchingSongs = await searchSongs(combinedText, 5);
+        if (matchingSongs && matchingSongs.length > 0) {
+            const bestMatch = extractSongData(matchingSongs[0]);
+            showToast(`Found Match: ${bestMatch.name} by ${bestMatch.artist}`, 'success');
+            
+            DOM.searchInput.value = combinedText;
+            switchView('search');
+            DOM.searchEmpty.classList.add('hidden');
+            DOM.searchSectionsContainer.classList.remove('hidden');
+            renderSaavnSearchResults(matchingSongs);
+            
+            playSong(bestMatch);
+        } else {
+            showToast('No matching song found.', 'error');
+        }
+    };
+
+    try {
+        recognition.start();
+    } catch(e) {
+        console.error('Failed to start identification recognition:', e);
+        DOM.listeningOverlay.classList.add('hidden');
+    }
+}
+
+function cancelSpeechRecognition() {
+    activeRecognitionMode = '';
+    if (recognition) {
+        try { recognition.abort(); } catch(e) {}
+        recognition = null;
+    }
+    DOM.listeningOverlay.classList.add('hidden');
+    showToast('Cancelled listening.', 'info');
+}
+
+async function showArtistView(artistName, shouldPushState = true) {
+    if (!artistName) return;
+
+    switchView('artist', false);
+    closeOverlay(false);
+    closeLyrics(false);
+    DOM.playlistDetails.classList.add('hidden');
+    DOM.playlistsGrid.classList.remove('hidden');
+
+    DOM.artistNameTitle.textContent = artistName;
+    DOM.artistMetaInfo.textContent = 'Loading top tracks...';
+    DOM.artistSongsList.innerHTML = '<div class="loading-spinner"><div class="spinner"></div></div>';
+
+    if (shouldPushState) {
+        history.pushState({ view: 'artist', artist: artistName, playlist: null, overlay: false, lyrics: false }, '');
+    }
+
+    try {
+        const rawSongs = await searchSongs(artistName, 30);
+        const songs = rawSongs.map(s => extractSongData(s));
+
+        if (songs.length === 0) {
+            DOM.artistSongsList.innerHTML = `<div class="empty-state"><p>No songs found for this artist.</p></div>`;
+            DOM.artistMetaInfo.textContent = '0 songs';
+            return;
+        }
+
+        DOM.artistMetaInfo.textContent = `${songs.length} top tracks`;
+        DOM.artistSongsList.innerHTML = '';
+        
+        songs.forEach((song, index) => {
+            const row = createSongRow(song, index + 1, 'artist');
+            DOM.artistSongsList.appendChild(row);
+        });
+
+        DOM.artistPlayAllBtn.onclick = () => {
+            state.queue = [...songs];
+            state.queueIndex = 0;
+            playSong(songs[0]);
+            renderQueue();
+            showToast(`Playing ${artistName} top tracks`, 'success');
+        };
+
+    } catch (e) {
+        console.error('Failed to load artist tracks:', e);
+        DOM.artistSongsList.innerHTML = `<div class="empty-state"><p>Failed to load tracks. Please try again.</p></div>`;
+    }
+}
+
+async function createTrackRadio(songData) {
+    if (!songData || !songData.id) return;
+    
+    showToast(`Creating radio for "${songData.name}"...`, 'info');
+    
+    try {
+        const res = await fetch(`${API_BASE}/songs/${songData.id}/suggestions`);
+        const json = await res.json();
+        
+        if (json.success && json.data && json.data.length > 0) {
+            const suggestions = json.data.map(s => extractSongData(s));
+            
+            // Queue format: target song first, followed by suggestions!
+            state.queue = [songData, ...suggestions];
+            state.queueIndex = 0;
+            
+            playSong(songData);
+            renderQueue();
+            showToast(`Song Radio started with ${suggestions.length} suggestions!`, 'success');
+        } else {
+            showToast('Could not find suggestions for this song.', 'error');
+        }
+    } catch (e) {
+        console.error('Failed to create song radio:', e);
+        showToast('Error creating song radio.', 'error');
     }
 }
