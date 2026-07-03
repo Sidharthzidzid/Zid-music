@@ -2228,7 +2228,7 @@ input:checked + .slider-round:before {
 /* === Voice Search & Listening Overlay === */
 .search-mic-btn {
     position: absolute;
-    right: 60px;
+    right: 6px;
     background: none;
     border: none;
     color: var(--text-secondary);
