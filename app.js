@@ -182,8 +182,21 @@ async function init() {
     loadPersonalizedRecommendations();
 
     // Initialize SPA navigation state
-    history.replaceState({ view: 'home', playlist: null, overlay: false }, '');
+    history.replaceState({ view: 'home', playlist: null, overlay: false, lyrics: false }, '');
     window.addEventListener('popstate', handlePopState);
+
+    // Capacitor Native Android Hardware Back Button listener
+    if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App) {
+        const App = window.Capacitor.Plugins.App;
+        App.addListener('backButton', () => {
+            const currentState = history.state;
+            if (!currentState || (currentState.view === 'home' && !currentState.overlay && !currentState.playlist && !currentState.lyrics)) {
+                App.exitApp();
+            } else {
+                history.back();
+            }
+        });
+    }
 }
 
 // ========== API Connection Test ==========
@@ -1075,7 +1088,7 @@ function switchView(viewName, shouldPushState = true) {
     }
 
     if (shouldPushState) {
-        history.pushState({ view: viewName, playlist: null, overlay: false }, '');
+        history.pushState({ view: viewName, playlist: null, overlay: false, lyrics: false }, '');
     }
 }
 
@@ -1363,7 +1376,7 @@ function setupEventListeners() {
     // Mobile Portrait Lyrics Toggle
     DOM.overlayVinylWrapper.addEventListener('click', () => {
         if (window.innerWidth <= 768) {
-            DOM.playerOverlay.classList.add('show-lyrics');
+            openLyrics(true);
         }
     });
 
@@ -1371,7 +1384,7 @@ function setupEventListeners() {
     if (closeLyricsBtn) {
         closeLyricsBtn.addEventListener('click', (e) => {
             e.stopPropagation();
-            DOM.playerOverlay.classList.remove('show-lyrics');
+            closeLyrics(true);
         });
     }
 
@@ -1618,7 +1631,7 @@ function openOverlay(shouldPushState = true) {
     if (shouldPushState) {
         const currentView = document.querySelector('.view.active')?.id?.replace('view-', '') || 'home';
         const currentPlaylist = !DOM.playlistDetails.classList.contains('hidden') ? DOM.playlistDetailsTitle.textContent : null;
-        history.pushState({ view: currentView, playlist: currentPlaylist, overlay: true }, '');
+        history.pushState({ view: currentView, playlist: currentPlaylist, overlay: true, lyrics: false }, '');
     }
 }
 
@@ -1628,6 +1641,30 @@ function closeOverlay(shouldPushState = true) {
 
     if (shouldPushState) {
         if (history.state && history.state.overlay) {
+            history.back();
+        }
+    }
+}
+
+function openLyrics(shouldPushState = true) {
+    DOM.playerOverlay.classList.add('show-lyrics');
+    if (shouldPushState) {
+        const currentView = document.querySelector('.view.active')?.id?.replace('view-', '') || 'home';
+        const currentPlaylist = !DOM.playlistDetails.classList.contains('hidden') ? DOM.playlistDetailsTitle.textContent : null;
+        history.pushState({
+            view: currentView,
+            playlist: currentPlaylist,
+            overlay: true,
+            lyrics: true
+        }, '');
+    }
+}
+
+// Ensure the helper compiles perfectly
+function closeLyrics(shouldPushState = true) {
+    DOM.playerOverlay.classList.remove('show-lyrics');
+    if (shouldPushState) {
+        if (history.state && history.state.lyrics) {
             history.back();
         }
     }
@@ -2232,7 +2269,7 @@ function showPlaylistDetails(name, shouldPushState = true) {
     }
 
     if (shouldPushState) {
-        history.pushState({ view: 'playlists', playlist: name, overlay: false }, '');
+        history.pushState({ view: 'playlists', playlist: name, overlay: false, lyrics: false }, '');
     }
 }
 
@@ -2297,10 +2334,18 @@ function handlePopState(event) {
         // Fallback to home
         switchView('home', false);
         closeOverlay(false);
+        closeLyrics(false);
         DOM.playlistDetails.classList.add('hidden');
         DOM.playlistsGrid.classList.remove('hidden');
         if (DOM.createPlaylistBtn) DOM.createPlaylistBtn.style.display = 'block';
         return;
+    }
+
+    // Sync lyrics
+    if (targetState.lyrics) {
+        openLyrics(false);
+    } else {
+        closeLyrics(false);
     }
 
     // Sync overlay
