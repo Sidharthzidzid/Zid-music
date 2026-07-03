@@ -2490,34 +2490,44 @@ async function songIdentifyFallback() {
 }
 
 function startVoiceSearch() {
+    // Use keyboard's built-in voice input (Gboard mic, SwiftKey, etc.)
+    // This is the most reliable approach — works on ALL browsers and devices
+    switchView('search');
+    DOM.searchInput.value = '';
+    DOM.searchInput.focus();
+    
+    // On mobile, the keyboard will appear with its own mic button
+    const isMobile = window.innerWidth <= 768;
+    if (isMobile) {
+        showToast('Tap the 🎤 mic button on your keyboard to speak', 'info');
+    } else {
+        // On desktop, try Web Speech API first, fall back to typing
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (SpeechRecognition && !isBraveBrowser()) {
+            startWebSpeechSearch();
+        } else {
+            showToast('Type your search query — voice is only supported in Chrome', 'info');
+        }
+    }
+}
+
+function startWebSpeechSearch() {
     if (recognition) {
         try { recognition.abort(); } catch(e) {}
     }
 
-    // Brave blocks Google Speech Services — go straight to fallback
-    if (isBraveBrowser()) {
-        showToast('Brave browser blocks voice recognition. Use Chrome for voice search, or type below.', 'warning');
-        voiceSearchFallback();
-        return;
-    }
-
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-        showToast('Voice Search is not supported in this browser.', 'error');
-        voiceSearchFallback();
-        return;
-    }
 
     const overlayEl = DOM.listeningOverlay || $('listening-overlay');
     const titleEl = DOM.listeningTitle || $('listening-title');
     const subtitleEl = DOM.listeningSubtitle || $('listening-subtitle');
 
     if (!overlayEl || !titleEl || !subtitleEl) {
-        showToast('Speech elements are loading. Please refresh the page.', 'warning');
+        showToast('Type your search in the search bar', 'info');
         return;
     }
 
-    titleEl.textContent = 'Listening for voice search...';
+    titleEl.textContent = 'Listening...';
     subtitleEl.textContent = 'Say the name of a song, artist, or album';
     overlayEl.classList.remove('hidden');
 
@@ -2543,18 +2553,15 @@ function startVoiceSearch() {
         if (overlayEl) overlayEl.classList.add('hidden');
         
         if (event.error === 'not-allowed') {
-            showToast('Microphone permission denied. Please allow mic access in browser settings.', 'error');
+            showToast('Mic permission denied. Use your keyboard mic instead.', 'warning');
         } else if (event.error === 'network') {
-            showToast('Voice recognition service unavailable. This browser may block Google Speech Services. Showing text fallback...', 'warning');
-            voiceSearchFallback();
+            showToast('Voice service unavailable. Use the 🎤 on your keyboard instead.', 'warning');
         } else if (event.error === 'no-speech') {
-            showToast('No speech detected. Please try again and speak clearly.', 'warning');
-        } else if (event.error === 'aborted') {
-            // User cancelled
-        } else {
-            showToast(`Voice search failed (${event.error}). Showing text fallback...`, 'error');
-            voiceSearchFallback();
+            showToast('No speech detected. Try again.', 'warning');
+        } else if (event.error !== 'aborted') {
+            showToast('Voice failed. Type your search instead.', 'warning');
         }
+        DOM.searchInput.focus();
     };
 
     recognition.onend = () => {
@@ -2566,122 +2573,26 @@ function startVoiceSearch() {
     } catch(e) {
         console.error('Failed to start recognition:', e);
         if (overlayEl) overlayEl.classList.add('hidden');
-        voiceSearchFallback();
+        showToast('Voice not available. Use your keyboard mic button.', 'warning');
+        DOM.searchInput.focus();
     }
 }
 
 function startSongIdentification() {
-    if (recognition) {
-        try { recognition.abort(); } catch(e) {}
-    }
-
-    // Brave blocks Google Speech Services
-    if (isBraveBrowser()) {
-        showToast('Brave browser blocks speech recognition. Use Chrome, or type lyrics/song name below.', 'warning');
-        songIdentifyFallback();
-        return;
-    }
-
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-        showToast('Song identification is not supported in this browser.', 'error');
-        songIdentifyFallback();
-        return;
-    }
-
-    const overlayEl = DOM.listeningOverlay || $('listening-overlay');
-    const titleEl = DOM.listeningTitle || $('listening-title');
-    const subtitleEl = DOM.listeningSubtitle || $('listening-subtitle');
-
-    if (!overlayEl || !titleEl || !subtitleEl) {
-        showToast('Speech elements are loading. Please pull down to refresh or clear your browser cache.', 'warning');
-        return;
-    }
-
-    titleEl.textContent = 'Identifying Song...';
-    subtitleEl.textContent = 'Hum a melody or speak/sing lyrics loudly';
-    overlayEl.classList.remove('hidden');
-
-    activeRecognitionMode = 'identify';
-
-    recognition = new SpeechRecognition();
-    recognition.continuous = true;
-    recognition.interimResults = false;
-    recognition.lang = 'en-US';
-
-    let capturedPhrases = [];
-
-    recognition.onresult = (event) => {
-        for (let i = event.resultIndex; i < event.results.length; ++i) {
-            if (event.results[i].isFinal) {
-                const text = event.results[i][0].transcript;
-                if (text && text.trim()) {
-                    capturedPhrases.push(text.trim());
-                }
-            }
-        }
+    // Use search bar for song identification — type lyrics or song name
+    switchView('search');
+    DOM.searchInput.value = '';
+    DOM.searchInput.setAttribute('placeholder', 'Type lyrics or song name to identify...');
+    DOM.searchInput.focus();
+    
+    showToast('Type some lyrics or the song name, then press Enter to find it!', 'info');
+    
+    // Restore original placeholder after the user leaves the input
+    const restorePlaceholder = () => {
+        DOM.searchInput.setAttribute('placeholder', 'Search for songs, artists, albums...');
+        DOM.searchInput.removeEventListener('blur', restorePlaceholder);
     };
-
-    recognition.onerror = (event) => {
-        console.error('Song identification speech error:', event.error);
-        if (overlayEl) overlayEl.classList.add('hidden');
-        
-        if (event.error === 'not-allowed') {
-            showToast('Microphone permission denied. Please allow mic access in browser settings.', 'error');
-        } else if (event.error === 'network') {
-            showToast('Speech service unavailable. Type lyrics or song name instead.', 'warning');
-            songIdentifyFallback();
-        } else if (event.error === 'no-speech') {
-            showToast('No audio detected. Try again — hum or sing louder!', 'warning');
-        } else if (event.error === 'aborted') {
-            // User cancelled
-        } else {
-            showToast(`Song identification failed (${event.error}).`, 'error');
-            songIdentifyFallback();
-        }
-    };
-
-    // Listen for 6 seconds, then stop and match
-    setTimeout(() => {
-        if (activeRecognitionMode === 'identify' && recognition) {
-            try { recognition.stop(); } catch(e) {}
-        }
-    }, 6000);
-
-    recognition.onend = async () => {
-        if (overlayEl) overlayEl.classList.add('hidden');
-        if (activeRecognitionMode !== 'identify') return;
-
-        const combinedText = capturedPhrases.join(' ');
-        if (!combinedText.trim()) {
-            showToast('Could not hear anything clearly. Try again.', 'error');
-            return;
-        }
-
-        showToast('Matching audio metadata...', 'info');
-        const matchingSongs = await searchSongs(combinedText, 5);
-        if (matchingSongs && matchingSongs.length > 0) {
-            const bestMatch = extractSongData(matchingSongs[0]);
-            showToast(`Found Match: ${bestMatch.name} by ${bestMatch.artist}`, 'success');
-            
-            DOM.searchInput.value = combinedText;
-            switchView('search');
-            DOM.searchEmpty.classList.add('hidden');
-            DOM.searchSectionsContainer.classList.remove('hidden');
-            renderSaavnSearchResults(matchingSongs);
-            
-            playSong(bestMatch);
-        } else {
-            showToast('No matching song found.', 'error');
-        }
-    };
-
-    try {
-        recognition.start();
-    } catch(e) {
-        console.error('Failed to start identification recognition:', e);
-        if (overlayEl) overlayEl.classList.add('hidden');
-    }
+    DOM.searchInput.addEventListener('blur', restorePlaceholder);
 }
 
 function cancelSpeechRecognition() {
