@@ -174,8 +174,6 @@ async function init() {
     DOM.autoplayToggle.checked = state.autoplay;
     
     await initOfflineDB(); // Initialize local database cache first
-    
-    loadYouTubeAPI();
     await testApiConnection();
     loadTrending();
     renderFavorites();
