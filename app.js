@@ -641,6 +641,81 @@ function stopYtProgressInterval() {
     }
 }
 
+// ========== Resolve YouTube Audio URL Direct Stream ==========
+async function resolveYtAudioUrl(videoId) {
+    for (const api of PIPED_APIS) {
+        try {
+            const res = await fetch(`${api}/streams/${videoId}`, {
+                signal: AbortSignal.timeout(5000)
+            });
+            if (!res.ok) continue;
+            const data = await res.json();
+            if (data.audioStreams && data.audioStreams.length > 0) {
+                const stream = data.audioStreams.find(s => s.mimeType.includes('audio/mp4')) || data.audioStreams[0];
+                if (stream.url) {
+                    return stream.url;
+                }
+            }
+        } catch (e) {
+            console.warn(`Failed to resolve YT audio stream from ${api}:`, e);
+        }
+    }
+    
+    try {
+        const cobaltRes = await fetch('https://api.cobalt.tools/api/json', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
+            },
+            body: JSON.stringify({
+                url: `https://www.youtube.com/watch?v=${videoId}`,
+                isAudioOnly: true
+            }),
+            signal: AbortSignal.timeout(6000)
+        });
+        if (cobaltRes.ok) {
+            const cobaltData = await cobaltRes.json();
+            if (cobaltData.url) {
+                return cobaltData.url;
+            }
+        }
+    } catch (e) {
+        console.warn('Cobalt stream resolution failed:', e);
+    }
+
+    return null;
+}
+
+function playYtViaIframe(videoId) {
+    state.currentYtDirectUrl = null;
+    if (ytPlayer && ytPlayerReady) {
+        ytPlayer.loadVideoById(videoId);
+        ytPlayer.setPlaybackQuality('tiny');
+        ytPlayer.playVideo();
+        state.isPlaying = true;
+        updatePlayerUI();
+        updatePlayButton();
+        updateMediaSession();
+        startYtProgressInterval();
+    } else {
+        loadYouTubeAPI();
+        let checkReady = setInterval(() => {
+            if (ytPlayer && ytPlayerReady) {
+                clearInterval(checkReady);
+                ytPlayer.loadVideoById(videoId);
+                ytPlayer.setPlaybackQuality('tiny');
+                ytPlayer.playVideo();
+                state.isPlaying = true;
+                updatePlayerUI();
+                updatePlayButton();
+                updateMediaSession();
+                startYtProgressInterval();
+            }
+        }, 100);
+    }
+}
+
 // ========== Playback ==========
 function playSong(songData) {
     if (!songData.audioUrl) {
@@ -696,40 +771,43 @@ function playSong(songData) {
     }
 
     if (isOnlineYt) {
-        // Stop/pause Saavn audio
         audio.pause();
         audio.src = '';
-
-        const videoId = songData.audioUrl.replace('yt-', '');
         
-        if (ytPlayer && ytPlayerReady) {
-            ytPlayer.loadVideoById(videoId);
-            ytPlayer.setPlaybackQuality('tiny');
-            ytPlayer.playVideo();
-            state.isPlaying = true;
-            updatePlayerUI();
-            updatePlayButton();
-            updateMediaSession();
-            startYtProgressInterval();
-        } else {
-            // Load if not loaded
-            loadYouTubeAPI();
-            let checkReady = setInterval(() => {
+        const videoId = songData.audioUrl.replace('yt-', '');
+        showToast('Resolving YouTube audio stream...', 'info');
+
+        resolveYtAudioUrl(videoId).then(directAudioUrl => {
+            if (directAudioUrl) {
+                console.log('Successfully resolved direct YouTube audio stream! Playing natively...');
+                state.currentYtDirectUrl = directAudioUrl;
+                
                 if (ytPlayer && ytPlayerReady) {
-                    clearInterval(checkReady);
-                    ytPlayer.loadVideoById(videoId);
-                    ytPlayer.setPlaybackQuality('tiny');
-                    ytPlayer.playVideo();
+                    ytPlayer.pauseVideo();
+                    stopYtProgressInterval();
+                }
+
+                audio.src = directAudioUrl;
+                audio.play().then(() => {
                     state.isPlaying = true;
                     updatePlayerUI();
                     updatePlayButton();
                     updateMediaSession();
-                    startYtProgressInterval();
-                }
-            }, 100);
-        }
+                }).catch(err => {
+                    console.error('Failed to play resolved YT audio natively, falling back to Iframe:', err);
+                    playYtViaIframe(videoId);
+                });
+            } else {
+                console.warn('Direct YouTube audio stream unavailable, falling back to YouTube iframe player.');
+                playYtViaIframe(videoId);
+            }
+        }).catch(err => {
+            console.error('Error resolving direct YT audio, falling back to Iframe:', err);
+            playYtViaIframe(videoId);
+        });
     } else {
         // JioSaavn or Local M4A Audio
+        state.currentYtDirectUrl = null;
         if (ytPlayer && ytPlayerReady) {
             ytPlayer.pauseVideo();
             stopYtProgressInterval();
@@ -761,7 +839,7 @@ function togglePlay() {
 
     const isOnlineYt = state.currentSong.audioUrl.startsWith('yt-');
 
-    if (isOnlineYt) {
+    if (isOnlineYt && !state.currentYtDirectUrl) {
         if (ytPlayer && ytPlayerReady) {
             const playerState = ytPlayer.getPlayerState();
             if (playerState === YT.PlayerState.PLAYING) {
@@ -772,6 +850,7 @@ function togglePlay() {
                 state.isPlaying = true;
             }
             updatePlayButton();
+            updateMediaSession();
         }
     } else {
         if (audio.paused) {
@@ -782,6 +861,7 @@ function togglePlay() {
             state.isPlaying = false;
         }
         updatePlayButton();
+        updateMediaSession();
     }
 }
 
@@ -1069,11 +1149,14 @@ function renderOfflineLibrary(songs) {
 
 // ========== Browser Downloads ==========
 const PIPED_APIS = [
-    'https://api.piped.yt',
     'https://pipedapi.kavin.rocks',
+    'https://pipedapi.lunar.icu',
+    'https://api.piped.yt',
     'https://pipedapi.tokhmi.xyz',
     'https://pipedapi.nosebs.ru',
-    'https://piped-api.garudalinux.org'
+    'https://piped-api.garudalinux.org',
+    'https://api-piped.mha.fi',
+    'https://piped-api.ku.edu.np'
 ];
 
 async function handleDownload(songData) {
@@ -1095,7 +1178,30 @@ async function handleDownload(songData) {
     }
 }
 
-async function fetchBlobWithTimeout(url, timeoutMs = 25000) {
+async function fetchBlobWithTimeout(url, timeoutMs = 45000) {
+    if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.CapacitorHttp) {
+        try {
+            console.log('Using native CapacitorHttp for download:', url);
+            const response = await window.Capacitor.Plugins.CapacitorHttp.get({
+                url: url,
+                responseType: 'base64',
+                connectTimeout: timeoutMs,
+                readTimeout: timeoutMs
+            });
+            if (response && response.data) {
+                const byteCharacters = atob(response.data);
+                const byteNumbers = new Array(byteCharacters.length);
+                for (let i = 0; i < byteCharacters.length; i++) {
+                    byteNumbers[i] = byteCharacters.charCodeAt(i);
+                }
+                const byteArray = new Uint8Array(byteNumbers);
+                return new Blob([byteArray], { type: 'audio/mpeg' });
+            }
+        } catch (e) {
+            console.error('Native CapacitorHttp download failed, falling back to standard fetch:', e);
+        }
+    }
+
     const controller = new AbortController();
     const id = setTimeout(() => controller.abort(), timeoutMs);
     try {
@@ -1282,7 +1388,7 @@ function updateActiveSongHighlight() {
 
 function updateProgress() {
     if (state._isDraggingProgress) return;
-    if (state.currentSong && state.currentSong.id.toString().startsWith('yt-')) {
+    if (state.currentSong && state.currentSong.id.toString().startsWith('yt-') && !state.currentYtDirectUrl) {
         return;
     }
     if (!audio.duration) return;
@@ -1825,6 +1931,16 @@ function setupEventListeners() {
         DOM.playlistDetails.classList.add('hidden');
         DOM.playlistsGrid.classList.remove('hidden');
         if (DOM.createPlaylistBtn) DOM.createPlaylistBtn.style.display = 'block';
+    });
+
+    // Pause heavy visual animations when app is blurred/hidden to save CPU
+    window.addEventListener('blur', () => {
+        DOM.overlayVinylWrapper.style.animationPlayState = 'paused';
+    });
+    window.addEventListener('focus', () => {
+        if (state.isPlaying) {
+            DOM.overlayVinylWrapper.style.animationPlayState = 'running';
+        }
     });
 }
 
