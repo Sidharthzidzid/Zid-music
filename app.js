@@ -770,9 +770,66 @@ function initOfflineDB() {
     });
 }
 
-function saveOfflineSong(songData, audioBlob, imageBlob) {
+function sanitizeFilename(name) {
+    if (!name) return 'unknown';
+    return name.replace(/[\\/:*?"<>|]/g, '_');
+}
+
+function blobToBase64(blob) {
     return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onerror = reject;
+        reader.onload = () => {
+            const base64String = reader.result.split(',')[1];
+            resolve(base64String);
+        };
+        reader.readAsDataURL(blob);
+    });
+}
+
+function getOfflineSongMetadata(songId) {
+    return new Promise((resolve, reject) => {
+        if (!offlineDb) return resolve(null);
+        const transaction = offlineDb.transaction(OFFLINE_STORE_NAME, 'readonly');
+        const store = transaction.objectStore(OFFLINE_STORE_NAME);
+        const request = store.get(songId);
+        request.onsuccess = (e) => resolve(e.target.result || null);
+        request.onerror = (e) => reject(e.target.error);
+    });
+}
+
+function saveOfflineSong(songData, audioBlob, imageBlob) {
+    return new Promise(async (resolve, reject) => {
         if (!offlineDb) return reject('DB not initialized');
+        
+        let localPath = null;
+        
+        // Save to public Documents/Zid Music folder if Capacitor Filesystem is available
+        if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Filesystem) {
+            try {
+                const Filesystem = window.Capacitor.Plugins.Filesystem;
+                const filename = `${sanitizeFilename(songData.name)} - ${sanitizeFilename(songData.artist)}.mp3`;
+                localPath = `Zid Music/${filename}`;
+                
+                showToast(`Saving "${songData.name}" to Zid Music folder...`, 'info');
+                const base64Data = await blobToBase64(audioBlob);
+                
+                await Filesystem.writeFile({
+                    path: localPath,
+                    data: base64Data,
+                    directory: 'DOCUMENTS',
+                    recursive: true
+                });
+                
+                console.log('Saved audio file successfully to documents:', localPath);
+                // Clear the heavy audioBlob so we do not bloat the IndexedDB database
+                audioBlob = null;
+            } catch (fsErr) {
+                console.error('Failed to save to device filesystem, falling back to local DB cache:', fsErr);
+                localPath = null; // Storing as IndexedDB blob fallback
+            }
+        }
+        
         const transaction = offlineDb.transaction(OFFLINE_STORE_NAME, 'readwrite');
         const store = transaction.objectStore(OFFLINE_STORE_NAME);
         
@@ -784,6 +841,7 @@ function saveOfflineSong(songData, audioBlob, imageBlob) {
             duration: songData.duration,
             audioBlob: audioBlob,
             imageBlob: imageBlob,
+            localPath: localPath,
             downloadedAt: Date.now()
         };
         
@@ -793,7 +851,27 @@ function saveOfflineSong(songData, audioBlob, imageBlob) {
     });
 }
 
-function deleteOfflineSong(songId) {
+async function deleteOfflineSong(songId) {
+    // 1. Delete physical file if present on Android
+    try {
+        const record = await getOfflineSongMetadata(songId);
+        if (record && record.localPath && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Filesystem) {
+            const Filesystem = window.Capacitor.Plugins.Filesystem;
+            try {
+                await Filesystem.deleteFile({
+                    path: record.localPath,
+                    directory: 'DOCUMENTS'
+                });
+                console.log('Deleted physical audio file:', record.localPath);
+            } catch (err) {
+                console.warn('Physical file not found or already deleted:', err);
+            }
+        }
+    } catch (e) {
+        console.warn('Failed to resolve offline metadata during file deletion:', e);
+    }
+
+    // 2. Delete entry from IndexedDB database
     return new Promise((resolve, reject) => {
         if (!offlineDb) return reject('DB not initialized');
         const transaction = offlineDb.transaction(OFFLINE_STORE_NAME, 'readwrite');
@@ -843,18 +921,51 @@ async function loadOfflineLibrary() {
     let localDBSongs = [];
     try {
         const dbSongs = await getOfflineSongs();
-        localDBSongs = dbSongs.map(record => {
-            return {
+        
+        // Map songs, and verify if the file still exists if it's on the filesystem
+        const mappedSongsPromises = dbSongs.map(async (record) => {
+            const songObj = {
                 id: record.id,
                 name: record.name,
                 artist: record.artist,
                 album: record.album,
                 duration: record.duration,
                 imageUrl: createBlobUrl(record.imageBlob),
-                audioUrl: createBlobUrl(record.audioBlob),
-                isOfflineIndexed: true
+                isOfflineIndexed: true,
+                localPath: record.localPath || null
             };
+
+            if (record.localPath && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Filesystem) {
+                try {
+                    const Filesystem = window.Capacitor.Plugins.Filesystem;
+                    // Check if file exists on disk
+                    await Filesystem.stat({
+                        path: record.localPath,
+                        directory: 'DOCUMENTS'
+                    });
+                    
+                    // Get URI and convert to playable web src
+                    const uriResult = await Filesystem.getUri({
+                        path: record.localPath,
+                        directory: 'DOCUMENTS'
+                    });
+                    songObj.audioUrl = window.Capacitor.convertFileSrc(uriResult.uri);
+                } catch (fsErr) {
+                    console.warn(`Local file ${record.localPath} not found, cleaning up database record:`, fsErr);
+                    // Automatically clean up database record
+                    await deleteOfflineSong(record.id);
+                    return null; // Return null so we filter it out
+                }
+            } else {
+                // Browser/non-filesystem fallback
+                songObj.audioUrl = createBlobUrl(record.audioBlob);
+            }
+
+            return songObj;
         });
+
+        const mappedSongs = await Promise.all(mappedSongsPromises);
+        localDBSongs = mappedSongs.filter(song => song !== null);
     } catch (e) {
         console.error('Failed to read offline database records:', e);
     }
