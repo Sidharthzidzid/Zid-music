@@ -28,10 +28,7 @@ const API_BASE_URLS = [
     'http://localhost:4000/api',
 ];
 
-const YT_SEARCH_APIS = [
-    'https://inv.zoomerville.com',
-    'https://yt.chocolatemoo53.com'
-];
+
 
 let API_BASE = API_BASE_URLS[0];
 
@@ -322,38 +319,7 @@ function createSongCard(data) {
 }
 
 // ========== Search ==========
-async function searchYouTube(query, limit = 12) {
-    for (const api of YT_SEARCH_APIS) {
-        try {
-            const url = `${api}/api/v1/search?q=${encodeURIComponent(query)}&type=video`;
-            const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
-            if (res.ok) {
-                const data = await res.json();
-                if (Array.isArray(data)) {
-                    return data.slice(0, limit);
-                }
-            }
-        } catch (e) {
-            console.warn(`YouTube search API failed on ${api}:`, e);
-            continue;
-        }
-    }
-    return [];
-}
 
-function extractYtSongData(video) {
-    return {
-        id: `yt-${video.videoId}`,
-        name: video.title || 'Unknown Video',
-        artist: video.author || 'Unknown Creator',
-        album: 'YouTube Video',
-        duration: video.lengthSeconds || 0,
-        imageUrl: `https://img.youtube.com/vi/${video.videoId}/mqdefault.jpg`,
-        audioUrl: `yt-${video.videoId}`,
-        year: '',
-        language: 'YouTube',
-    };
-}
 
 function handleSearch(query) {
     clearTimeout(state.searchTimeout);
@@ -371,16 +337,10 @@ function handleSearch(query) {
     DOM.searchSectionsContainer.classList.remove('hidden');
     
     DOM.saavnSearchResults.innerHTML = '<div class="loading-spinner"><div class="spinner"></div></div>';
-    DOM.youtubeSearchResults.innerHTML = '<div class="loading-spinner"><div class="spinner"></div></div>';
 
     state.searchTimeout = setTimeout(async () => {
-        const [saavnSongs, ytVideos] = await Promise.all([
-            searchSongs(query, 12),
-            searchYouTube(query, 12)
-        ]);
-        
+        const saavnSongs = await searchSongs(query, 12);
         renderSaavnSearchResults(saavnSongs);
-        renderYtSearchResults(ytVideos);
     }, 400);
 }
 
@@ -401,22 +361,7 @@ function renderSaavnSearchResults(songs) {
     });
 }
 
-function renderYtSearchResults(videos) {
-    if (videos.length === 0) {
-        DOM.youtubeSearchResults.innerHTML = `
-            <div class="empty-state" style="padding: 40px 10px;">
-                <p>No YouTube videos found.</p>
-            </div>`;
-        return;
-    }
 
-    DOM.youtubeSearchResults.innerHTML = '';
-    videos.forEach((video, index) => {
-        const data = extractYtSongData(video);
-        const row = createSongRow(data, index + 1, 'search');
-        DOM.youtubeSearchResults.appendChild(row);
-    });
-}
 
 // ========== Song Row Component ==========
 function createSongRow(data, number, context = 'search') {
@@ -424,14 +369,9 @@ function createSongRow(data, number, context = 'search') {
     const isPlaying = state.currentSong && state.currentSong.id === data.id;
     const duration = formatTime(data.duration);
     const isOffline = data.audioUrl.startsWith('songs/');
-    const isYt = data.audioUrl.startsWith('yt-') || (data.id.toString().startsWith('yt-') && !isOffline);
     let badgeHTML = '';
     if (isOffline) {
         badgeHTML = '<span class="badge badge-offline" style="margin-left: 8px; vertical-align: middle; display: inline-block;">Offline</span>';
-    } else if (isYt) {
-        badgeHTML = '<span class="badge badge-youtube" style="margin-left: 8px; vertical-align: middle; display: inline-block;">YT</span>';
-    } else {
-        badgeHTML = '<span class="badge badge-saavn" style="margin-left: 8px; vertical-align: middle; display: inline-block;">Saavn</span>';
     }
 
     const row = document.createElement('div');
@@ -542,209 +482,12 @@ function createSongRow(data, number, context = 'search') {
     return row;
 }
 
-let ytPlayer = null;
-let ytPlayerReady = false;
-let ytProgressInterval = null;
 
-function loadYouTubeAPI() {
-    if (window.YT) {
-        onYouTubeIframeAPIReady();
-        return;
-    }
-    const tag = document.createElement('script');
-    tag.src = "https://www.youtube.com/iframe_api";
-    const firstScriptTag = document.getElementsByTagName('script')[0];
-    firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
-}
-
-// Global callback for YouTube API
-window.onYouTubeIframeAPIReady = function() {
-    ytPlayer = new YT.Player('youtube-iframe', {
-        height: '100%',
-        width: '100%',
-        videoId: '',
-        playerVars: {
-            'playsinline': 1,
-            'controls': 0,
-            'disablekb': 1,
-            'rel': 0,
-            'origin': window.location.origin || '*'
-        },
-        events: {
-            'onReady': onPlayerReady,
-            'onStateChange': onPlayerStateChange,
-            'onError': onPlayerError
-        }
-    });
-};
-
-function onPlayerReady(event) {
-    ytPlayerReady = true;
-    ytPlayer.setVolume(state.volume);
-}
-
-function onPlayerStateChange(event) {
-    if (event.data === YT.PlayerState.PLAYING) {
-        state.isPlaying = true;
-        updatePlayButton();
-        startYtProgressInterval();
-    } else if (event.data === YT.PlayerState.PAUSED) {
-        state.isPlaying = false;
-        updatePlayButton();
-        stopYtProgressInterval();
-    } else if (event.data === YT.PlayerState.ENDED) {
-        stopYtProgressInterval();
-        handleSongEnd();
-    }
-}
-
-function onPlayerError(event) {
-    console.error('YouTube player error:', event.data);
-    showToast('YouTube video playback failed. Trying next...', 'error');
-    setTimeout(playNext, 1500);
-}
-
-function startYtProgressInterval() {
-    stopYtProgressInterval();
-    ytProgressInterval = setInterval(() => {
-        if (state._isDraggingProgress) return;
-        if (ytPlayer && ytPlayerReady && state.currentSong && state.currentSong.audioUrl.startsWith('yt-')) {
-            const currentTime = ytPlayer.getCurrentTime();
-            const duration = ytPlayer.getDuration();
-            if (duration) {
-                const percent = (currentTime / duration) * 100;
-                DOM.progressBar.style.width = `${percent}%`;
-                DOM.progressThumb.style.left = `${percent}%`;
-                DOM.currentTime.textContent = formatTime(currentTime);
-                DOM.totalTime.textContent = formatTime(duration);
-
-                // Sync Overlay progress
-                DOM.overlayProgressBar.style.width = `${percent}%`;
-                DOM.overlayProgressThumb.style.left = `${percent}%`;
-                DOM.overlayCurrentTime.textContent = formatTime(currentTime);
-                DOM.overlayTotalTime.textContent = formatTime(duration);
-
-                // Sync lyrics
-                syncLyrics(currentTime);
-
-                // Preload next track
-                checkPreload(currentTime, duration);
-            }
-        }
-    }, 250);
-}
-
-function stopYtProgressInterval() {
-    if (ytProgressInterval) {
-        clearInterval(ytProgressInterval);
-        ytProgressInterval = null;
-    }
-}
-
-// ========== Resolve YouTube Audio URL Direct Stream ==========
-async function resolveYtAudioUrl(videoId) {
-    const endpoints = PIPED_APIS.map(api => `${api}/streams/${videoId}`);
-    
-    // Race Piped APIs in parallel! Fastest one wins.
-    try {
-        const promises = endpoints.map(url => 
-            fetch(url, { signal: AbortSignal.timeout(4000) })
-                .then(res => {
-                    if (!res.ok) throw new Error('Not ok');
-                    return res.json();
-                })
-                .then(data => {
-                    if (data.audioStreams && data.audioStreams.length > 0) {
-                        const stream = data.audioStreams.find(s => s.mimeType.includes('audio/mp4')) || data.audioStreams[0];
-                        if (stream.url) return stream.url;
-                    }
-                    throw new Error('No stream');
-                })
-        );
-        return await Promise.any(promises);
-    } catch (e) {
-        console.warn('Parallel Piped stream resolution failed, trying Cobalt:', e);
-    }
-    
-    // Fallback to Cobalt
-    try {
-        const cobaltRes = await fetch('https://api.cobalt.tools/api/json', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Accept': 'application/json'
-            },
-            body: JSON.stringify({
-                url: `https://www.youtube.com/watch?v=${videoId}`,
-                isAudioOnly: true
-            }),
-            signal: AbortSignal.timeout(5000)
-        });
-        if (cobaltRes.ok) {
-            const cobaltData = await cobaltRes.json();
-            if (cobaltData.url) return cobaltData.url;
-        }
-    } catch (e) {
-        console.warn('Cobalt stream resolution failed:', e);
-    }
-
-    return null;
-}
-
-function playYtViaIframe(videoId) {
-    state.currentYtDirectUrl = null;
-    if (ytPlayer && ytPlayerReady) {
-        ytPlayer.loadVideoById(videoId);
-        ytPlayer.setPlaybackQuality('tiny');
-        ytPlayer.playVideo();
-        state.isPlaying = true;
-        updatePlayerUI();
-        updatePlayButton();
-        updateMediaSession();
-        startYtProgressInterval();
-    } else {
-        loadYouTubeAPI();
-        let checkReady = setInterval(() => {
-            if (ytPlayer && ytPlayerReady) {
-                clearInterval(checkReady);
-                ytPlayer.loadVideoById(videoId);
-                ytPlayer.setPlaybackQuality('tiny');
-                ytPlayer.playVideo();
-                state.isPlaying = true;
-                updatePlayerUI();
-                updatePlayButton();
-                updateMediaSession();
-                startYtProgressInterval();
-            }
-        }, 100);
-    }
-}
 
 // ========== Playback ==========
 function playSong(songData) {
     if (!songData.audioUrl) {
         showToast('This song is not available for playback.', 'error');
-        return;
-    }
-
-    const isOnlineYt = songData.audioUrl.startsWith('yt-');
-
-    if (isOnlineYt && window.location.protocol === 'file:') {
-        // Under file://, online YouTube play is blocked by Google's domain restrictions.
-        // Copy yt-sync download command to clipboard so the user can easily sync it!
-        const cmd = `node yt-sync.js "${songData.name}"`;
-        navigator.clipboard.writeText(cmd).then(() => {
-            showToast('Download command copied! Run it in terminal to play offline.', 'success');
-        }).catch(() => {
-            showToast('Run command: node yt-sync.js "' + songData.name + '"', 'info');
-        });
-        
-        state.isPlaying = false;
-        updatePlayButton();
-        
-        // Clear active song highlight so it doesn't get stuck in playing state
-        state.currentSong = null;
-        updateActiveSongHighlight();
         return;
     }
 
@@ -774,61 +517,17 @@ function playSong(songData) {
         state.queueIndex = state.queue.length - 1;
     }
 
-    if (isOnlineYt) {
-        audio.pause();
-        audio.src = '';
-        
-        const videoId = songData.audioUrl.replace('yt-', '');
-        showToast('Resolving YouTube audio stream...', 'info');
-
-        resolveYtAudioUrl(videoId).then(directAudioUrl => {
-            if (directAudioUrl) {
-                console.log('Successfully resolved direct YouTube audio stream! Playing natively...');
-                state.currentYtDirectUrl = directAudioUrl;
-                
-                if (ytPlayer && ytPlayerReady) {
-                    ytPlayer.pauseVideo();
-                    stopYtProgressInterval();
-                }
-
-                audio.src = directAudioUrl;
-                audio.play().then(() => {
-                    state.isPlaying = true;
-                    updatePlayerUI();
-                    updatePlayButton();
-                    updateMediaSession();
-                }).catch(err => {
-                    console.error('Failed to play resolved YT audio natively, falling back to Iframe:', err);
-                    playYtViaIframe(videoId);
-                });
-            } else {
-                console.warn('Direct YouTube audio stream unavailable, falling back to YouTube iframe player.');
-                playYtViaIframe(videoId);
-            }
-        }).catch(err => {
-            console.error('Error resolving direct YT audio, falling back to Iframe:', err);
-            playYtViaIframe(videoId);
-        });
-    } else {
-        // JioSaavn or Local M4A Audio
-        state.currentYtDirectUrl = null;
-        if (ytPlayer && ytPlayerReady) {
-            ytPlayer.pauseVideo();
-            stopYtProgressInterval();
-        }
-
-        audio.src = songData.audioUrl;
-        audio.play().then(() => {
-            state.isPlaying = true;
-            updatePlayerUI();
-            updatePlayButton();
-            updateMediaSession();
-        }).catch(err => {
-            console.error('Saavn playback error:', err);
-            showToast('Could not play this song. Trying next...', 'error');
-            setTimeout(playNext, 1500);
-        });
-    }
+    audio.src = songData.audioUrl;
+    audio.play().then(() => {
+        state.isPlaying = true;
+        updatePlayerUI();
+        updatePlayButton();
+        updateMediaSession();
+    }).catch(err => {
+        console.error('Saavn playback error:', err);
+        showToast('Could not play this song. Trying next...', 'error');
+        setTimeout(playNext, 1500);
+    });
 
     // Show player bar
     DOM.playerBar.classList.remove('hidden');
@@ -841,32 +540,15 @@ function playSong(songData) {
 function togglePlay() {
     if (!state.currentSong) return;
 
-    const isOnlineYt = state.currentSong.audioUrl.startsWith('yt-');
-
-    if (isOnlineYt && !state.currentYtDirectUrl) {
-        if (ytPlayer && ytPlayerReady) {
-            const playerState = ytPlayer.getPlayerState();
-            if (playerState === YT.PlayerState.PLAYING) {
-                ytPlayer.pauseVideo();
-                state.isPlaying = false;
-            } else {
-                ytPlayer.playVideo();
-                state.isPlaying = true;
-            }
-            updatePlayButton();
-            updateMediaSession();
-        }
+    if (audio.paused) {
+        audio.play();
+        state.isPlaying = true;
     } else {
-        if (audio.paused) {
-            audio.play();
-            state.isPlaying = true;
-        } else {
-            audio.pause();
-            state.isPlaying = false;
-        }
-        updatePlayButton();
-        updateMediaSession();
+        audio.pause();
+        state.isPlaying = false;
     }
+    updatePlayButton();
+    updateMediaSession();
 }
 
 function playNext() {
@@ -888,16 +570,9 @@ function playNext() {
 function playPrev() {
     if (state.queue.length === 0) return;
 
-    const isOnlineYt = state.currentSong && state.currentSong.audioUrl.startsWith('yt-');
-    const currentTime = isOnlineYt ? (ytPlayer && ytPlayerReady ? ytPlayer.getCurrentTime() : 0) : audio.currentTime;
-
     // If more than 3 seconds in, restart the song
-    if (currentTime > 3) {
-        if (isOnlineYt) {
-            if (ytPlayer && ytPlayerReady) ytPlayer.seekTo(0, true);
-        } else {
-            audio.currentTime = 0;
-        }
+    if (audio.currentTime > 3) {
+        audio.currentTime = 0;
         return;
     }
 
@@ -1152,16 +827,6 @@ function renderOfflineLibrary(songs) {
 }
 
 // ========== Browser Downloads ==========
-const PIPED_APIS = [
-    'https://pipedapi.kavin.rocks',
-    'https://pipedapi.lunar.icu',
-    'https://api.piped.yt',
-    'https://pipedapi.tokhmi.xyz',
-    'https://pipedapi.nosebs.ru',
-    'https://piped-api.garudalinux.org',
-    'https://api-piped.mha.fi',
-    'https://piped-api.ku.edu.np'
-];
 
 async function handleDownload(songData) {
     if (!songData) return;
@@ -1173,13 +838,7 @@ async function handleDownload(songData) {
         return;
     }
 
-    const isYt = songData.id.toString().startsWith('yt-') || songData.audioUrl.startsWith('yt-');
-
-    if (isYt) {
-        downloadYtSong(songData);
-    } else {
-        downloadSaavnSong(songData);
-    }
+    downloadSaavnSong(songData);
 }
 
 async function fetchBlobWithTimeout(url, timeoutMs = 45000) {
@@ -1246,90 +905,7 @@ async function downloadSaavnSong(songData) {
     }
 }
 
-async function downloadYtSong(songData) {
-    const videoId = songData.audioUrl.replace('yt-', '');
-    showToast(`Resolving YouTube converter for "${songData.name}"...`, 'info');
-    
-    // 1. Try using Cobalt API first (highly reliable & fast for direct streams)
-    try {
-        const cobaltRes = await fetch('https://api.cobalt.tools/api/json', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Accept': 'application/json'
-            },
-            body: JSON.stringify({
-                url: `https://www.youtube.com/watch?v=${videoId}`,
-                isAudioOnly: true
-            }),
-            signal: AbortSignal.timeout(10000)
-        });
-        if (cobaltRes.ok) {
-            const cobaltData = await cobaltRes.json();
-            if (cobaltData.url) {
-                showToast(`Downloading "${songData.name}" from stream source...`, 'info');
-                const audioBlob = await fetchBlobWithTimeout(cobaltData.url, 45000);
-                
-                let imageBlob = null;
-                if (songData.imageUrl) {
-                    try {
-                        imageBlob = await fetchBlobWithTimeout(songData.imageUrl, 8000);
-                    } catch (e) {
-                        console.warn('Failed to fetch thumbnail:', e);
-                    }
-                }
-                
-                await saveOfflineSong(songData, audioBlob, imageBlob);
-                showToast(`"${songData.name}" is now available offline!`, 'success');
-                loadOfflineLibrary();
-                return;
-            }
-        }
-    } catch (e) {
-        console.warn('Cobalt download failed, falling back to Piped:', e);
-    }
-    
-    // 2. Fall back to Piped API mirrors
-    for (const api of PIPED_APIS) {
-        try {
-            const res = await fetch(`${api}/streams/${videoId}`, {
-                signal: AbortSignal.timeout(6000)
-            });
-            if (!res.ok) continue;
-            
-            const data = await res.json();
-            if (data.audioStreams && data.audioStreams.length > 0) {
-                const stream = data.audioStreams[0];
-                if (stream.url) {
-                    showToast(`Downloading "${songData.name}" directly from YouTube...`, 'info');
-                    
-                    const audioBlob = await fetchBlobWithTimeout(stream.url, 30000);
-                    
-                    let imageBlob = null;
-                    if (songData.imageUrl) {
-                        try {
-                            imageBlob = await fetchBlobWithTimeout(songData.imageUrl, 8000);
-                        } catch (e) {
-                            console.warn('Failed to fetch YouTube thumbnail blob:', e);
-                        }
-                    }
 
-                    await saveOfflineSong(songData, audioBlob, imageBlob);
-                    showToast(`"${songData.name}" is now available offline!`, 'success');
-                    loadOfflineLibrary();
-                    return;
-                }
-            }
-        } catch (e) {
-            console.warn(`YouTube download failed on ${api}:`, e);
-            continue;
-        }
-    }
-    
-    showToast('Direct download unavailable. Redirecting to online converter...', 'warning');
-    const fallbackUrl = `https://www.youtubepp.com/watch?v=${videoId}`;
-    window.open(fallbackUrl, '_blank');
-}
 
 // ========== UI Updates ==========
 function updatePlayerUI() {
