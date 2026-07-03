@@ -164,17 +164,9 @@
                     <div id="search-sections-container" class="search-sections-container hidden">
                         <div class="search-section">
                             <h3 class="search-section-title">
-                                <span class="badge badge-saavn">Saavn</span>
                                 Studio Tracks
                             </h3>
                             <div id="saavn-search-results" class="songs-list"></div>
-                        </div>
-                        <div class="search-section">
-                            <h3 class="search-section-title">
-                                <span class="badge badge-youtube">YouTube</span>
-                                Videos & Covers
-                            </h3>
-                            <div id="youtube-search-results" class="songs-list"></div>
                         </div>
                     </div>
                 </div>
@@ -348,12 +340,7 @@
         </div>
     </div>
 
-    <!-- Hidden YouTube Background Player -->
-    <div id="yt-hidden-container" style="position: absolute; left: -9999px; top: -9999px; width: 200px; height: 200px; overflow: hidden; pointer-events: none;">
-        <div class="yt-iframe-wrapper">
-            <div id="youtube-iframe"></div>
-        </div>
-    </div>
+
 
     <!-- Expanded Now Playing Overlay -->
     <div id="player-overlay" class="player-overlay">
@@ -509,5 +496,14 @@
     <audio id="audio-preloader" preload="auto" crossorigin="anonymous" style="display:none"></audio>
 
     <script src="app.js"></script>
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./sw.js')
+                    .then(reg => console.log('Service Worker registered successfully:', reg.scope))
+                    .catch(err => console.error('Service Worker registration failed:', err));
+            });
+        }
+    </script>
 </body>
 </html>
