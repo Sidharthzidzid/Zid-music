@@ -2929,26 +2929,23 @@ async function songIdentifyFallback() {
 }
 
 function startVoiceSearch() {
-    // Use keyboard's built-in voice input (Gboard mic, SwiftKey, etc.)
-    // This is the most reliable approach — works on ALL browsers and devices
     switchView('search');
     DOM.searchInput.value = '';
     DOM.searchInput.focus();
 
-    // On mobile, the keyboard will appear with its own mic button
-    const isMobile = window.innerWidth <= 768;
-    if (isMobile) {
-        showToast('Tap the 🎤 mic button on your keyboard to speak', 'info');
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (SpeechRecognition && !isBraveBrowser()) {
+        startWebSpeechSearch();
     } else {
-        // On desktop, try Web Speech API first, fall back to typing
-        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-        if (SpeechRecognition && !isBraveBrowser()) {
-            startWebSpeechSearch();
+        const isMobile = window.innerWidth <= 768;
+        if (isMobile) {
+            showToast('Tap the 🎤 mic button on your keyboard to speak', 'info');
         } else {
             showToast('Type your search query — voice is only supported in Chrome', 'info');
         }
     }
 }
+
 
 function startWebSpeechSearch() {
     if (recognition) {
