@@ -2453,14 +2453,58 @@ function handlePopState(event) {
 let recognition = null;
 let activeRecognitionMode = '';
 
+function isBraveBrowser() {
+    return navigator.brave && typeof navigator.brave.isBrave === 'function';
+}
+
+function voiceSearchFallback() {
+    const query = prompt('🎤 Voice search unavailable.\n\nType your search query instead:');
+    if (query && query.trim()) {
+        DOM.searchInput.value = query.trim();
+        handleSearch(query.trim());
+        switchView('search');
+        showToast(`Searching for "${query.trim()}"`, 'info');
+    }
+}
+
+async function songIdentifyFallback() {
+    const lyrics = prompt('🎵 Song identification unavailable.\n\nType some lyrics or the song name to identify it:');
+    if (lyrics && lyrics.trim()) {
+        showToast('Searching for matching songs...', 'info');
+        const matchingSongs = await searchSongs(lyrics.trim(), 5);
+        if (matchingSongs && matchingSongs.length > 0) {
+            const bestMatch = extractSongData(matchingSongs[0]);
+            showToast(`Found: ${bestMatch.name} by ${bestMatch.artist}`, 'success');
+            
+            DOM.searchInput.value = lyrics.trim();
+            switchView('search');
+            DOM.searchEmpty.classList.add('hidden');
+            DOM.searchSectionsContainer.classList.remove('hidden');
+            renderSaavnSearchResults(matchingSongs);
+            
+            playSong(bestMatch);
+        } else {
+            showToast('No matching song found. Try different lyrics.', 'error');
+        }
+    }
+}
+
 function startVoiceSearch() {
     if (recognition) {
         try { recognition.abort(); } catch(e) {}
     }
 
+    // Brave blocks Google Speech Services — go straight to fallback
+    if (isBraveBrowser()) {
+        showToast('Brave browser blocks voice recognition. Use Chrome for voice search, or type below.', 'warning');
+        voiceSearchFallback();
+        return;
+    }
+
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
         showToast('Voice Search is not supported in this browser.', 'error');
+        voiceSearchFallback();
         return;
     }
 
@@ -2469,7 +2513,7 @@ function startVoiceSearch() {
     const subtitleEl = DOM.listeningSubtitle || $('listening-subtitle');
 
     if (!overlayEl || !titleEl || !subtitleEl) {
-        showToast('Speech elements are loading. Please pull down to refresh or clear your browser cache.', 'warning');
+        showToast('Speech elements are loading. Please refresh the page.', 'warning');
         return;
     }
 
@@ -2499,18 +2543,17 @@ function startVoiceSearch() {
         if (overlayEl) overlayEl.classList.add('hidden');
         
         if (event.error === 'not-allowed') {
-            showToast('Microphone permission denied. Please allow mic access in your browser/app settings.', 'error');
+            showToast('Microphone permission denied. Please allow mic access in browser settings.', 'error');
         } else if (event.error === 'network') {
-            showToast('Voice search requires a stable internet connection to Google Speech Services. Please check your connection and try again.', 'error');
-            // Fallback: focus the search input so the user can type instead
-            DOM.searchInput.focus();
+            showToast('Voice recognition service unavailable. This browser may block Google Speech Services. Showing text fallback...', 'warning');
+            voiceSearchFallback();
         } else if (event.error === 'no-speech') {
             showToast('No speech detected. Please try again and speak clearly.', 'warning');
         } else if (event.error === 'aborted') {
-            // User cancelled, no toast needed
+            // User cancelled
         } else {
-            showToast(`Voice search failed (${event.error}). Try typing your search instead.`, 'error');
-            DOM.searchInput.focus();
+            showToast(`Voice search failed (${event.error}). Showing text fallback...`, 'error');
+            voiceSearchFallback();
         }
     };
 
@@ -2523,6 +2566,7 @@ function startVoiceSearch() {
     } catch(e) {
         console.error('Failed to start recognition:', e);
         if (overlayEl) overlayEl.classList.add('hidden');
+        voiceSearchFallback();
     }
 }
 
@@ -2531,9 +2575,17 @@ function startSongIdentification() {
         try { recognition.abort(); } catch(e) {}
     }
 
+    // Brave blocks Google Speech Services
+    if (isBraveBrowser()) {
+        showToast('Brave browser blocks speech recognition. Use Chrome, or type lyrics/song name below.', 'warning');
+        songIdentifyFallback();
+        return;
+    }
+
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
         showToast('Song identification is not supported in this browser.', 'error');
+        songIdentifyFallback();
         return;
     }
 
@@ -2572,19 +2624,20 @@ function startSongIdentification() {
 
     recognition.onerror = (event) => {
         console.error('Song identification speech error:', event.error);
+        if (overlayEl) overlayEl.classList.add('hidden');
         
         if (event.error === 'not-allowed') {
-            showToast('Microphone permission denied. Please allow mic access in your browser/app settings.', 'error');
-            if (overlayEl) overlayEl.classList.add('hidden');
+            showToast('Microphone permission denied. Please allow mic access in browser settings.', 'error');
         } else if (event.error === 'network') {
-            showToast('Song identification requires a stable internet connection to Google Speech Services. Please check your connection.', 'error');
-            if (overlayEl) overlayEl.classList.add('hidden');
+            showToast('Speech service unavailable. Type lyrics or song name instead.', 'warning');
+            songIdentifyFallback();
         } else if (event.error === 'no-speech') {
             showToast('No audio detected. Try again — hum or sing louder!', 'warning');
         } else if (event.error === 'aborted') {
             // User cancelled
         } else {
             showToast(`Song identification failed (${event.error}).`, 'error');
+            songIdentifyFallback();
         }
     };
 
