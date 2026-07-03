@@ -808,28 +808,41 @@ function saveOfflineSong(songData, audioBlob, imageBlob) {
         if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Filesystem) {
             try {
                 const Filesystem = window.Capacitor.Plugins.Filesystem;
-                
-                // Request Storage Permission first
-                const check = await Filesystem.checkPermissions();
-                if (check.publicStorage !== 'granted') {
-                    const req = await Filesystem.requestPermissions();
-                    if (req.publicStorage !== 'granted') {
-                        throw new Error('Storage permission denied. Go to Android Settings -> Apps -> Zid Music -> Permissions to enable storage access.');
-                    }
-                }
-
                 const filename = `${sanitizeFilename(songData.name)} - ${sanitizeFilename(songData.artist)}.mp3`;
                 localPath = `Zid Music/${filename}`;
                 
                 showToast(`Saving "${songData.name}" to Zid Music folder...`, 'info');
                 const base64Data = await blobToBase64(audioBlob);
                 
-                await Filesystem.writeFile({
-                    path: localPath,
-                    data: base64Data,
-                    directory: 'EXTERNAL',
-                    recursive: true
-                });
+                // Write with a fallback: if it fails, request permissions and try one more time
+                try {
+                    await Filesystem.writeFile({
+                        path: localPath,
+                        data: base64Data,
+                        directory: 'EXTERNAL',
+                        recursive: true
+                    });
+                } catch (writeErr) {
+                    console.warn('Initial write failed, requesting permissions and trying again...', writeErr);
+                    
+                    // Request storage permissions
+                    try {
+                        const check = await Filesystem.checkPermissions();
+                        if (check.publicStorage !== 'granted') {
+                            await Filesystem.requestPermissions();
+                        }
+                    } catch (permErr) {
+                        console.error('Failed to request storage permissions:', permErr);
+                    }
+                    
+                    // Retry writing file
+                    await Filesystem.writeFile({
+                        path: localPath,
+                        data: base64Data,
+                        directory: 'EXTERNAL',
+                        recursive: true
+                    });
+                }
                 
                 console.log('Saved audio file successfully to public storage:', localPath);
                 showToast(`Saved to device storage: Zid Music/${filename}`, 'success');
@@ -914,6 +927,11 @@ function createBlobUrl(blob) {
     return url;
 }
 
+function clearAllBlobUrls() {
+    generatedBlobUrls.forEach(url => URL.revokeObjectURL(url));
+    generatedBlobUrls.clear();
+}
+
 // ========== Offline Library ==========
 async function loadOfflineLibrary() {
     clearAllBlobUrls();
@@ -931,44 +949,53 @@ async function loadOfflineLibrary() {
         
         // Map songs, and verify if the file still exists if it's on the filesystem
         const mappedSongsPromises = dbSongs.map(async (record) => {
-            const songObj = {
-                id: record.id,
-                name: record.name,
-                artist: record.artist,
-                album: record.album,
-                duration: record.duration,
-                imageUrl: createBlobUrl(record.imageBlob),
-                isOfflineIndexed: true,
-                localPath: record.localPath || null
-            };
+            try {
+                const songObj = {
+                    id: record.id,
+                    name: record.name,
+                    artist: record.artist,
+                    album: record.album,
+                    duration: record.duration,
+                    imageUrl: createBlobUrl(record.imageBlob),
+                    isOfflineIndexed: true,
+                    localPath: record.localPath || null
+                };
 
-            if (record.localPath && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Filesystem) {
-                try {
-                    const Filesystem = window.Capacitor.Plugins.Filesystem;
-                    // Check if file exists on disk
-                    await Filesystem.stat({
-                        path: record.localPath,
-                        directory: 'EXTERNAL'
-                    });
-                    
-                    // Get URI and convert to playable web src
-                    const uriResult = await Filesystem.getUri({
-                        path: record.localPath,
-                        directory: 'EXTERNAL'
-                    });
-                    songObj.audioUrl = window.Capacitor.convertFileSrc(uriResult.uri);
-                } catch (fsErr) {
-                    console.warn(`Local file ${record.localPath} not found, cleaning up database record:`, fsErr);
-                    // Automatically clean up database record
-                    await deleteOfflineSong(record.id);
-                    return null; // Return null so we filter it out
+                if (record.localPath && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Filesystem) {
+                    try {
+                        const Filesystem = window.Capacitor.Plugins.Filesystem;
+                        // Check if file exists on disk
+                        await Filesystem.stat({
+                            path: record.localPath,
+                            directory: 'EXTERNAL'
+                        });
+                        
+                        // Get URI and convert to playable web src
+                        const uriResult = await Filesystem.getUri({
+                            path: record.localPath,
+                            directory: 'EXTERNAL'
+                        });
+                        songObj.audioUrl = window.Capacitor.convertFileSrc(uriResult.uri);
+                    } catch (fsErr) {
+                        console.warn(`Local file ${record.localPath} not found:`, fsErr);
+                        // Safe fallback: if we have audioBlob cached in IndexedDB, use it!
+                        if (record.audioBlob) {
+                            songObj.audioUrl = createBlobUrl(record.audioBlob);
+                        } else {
+                            // Otherwise, do not display this song since it cannot be loaded
+                            return null;
+                        }
+                    }
+                } else {
+                    // Browser/non-filesystem fallback
+                    songObj.audioUrl = createBlobUrl(record.audioBlob);
                 }
-            } else {
-                // Browser/non-filesystem fallback
-                songObj.audioUrl = createBlobUrl(record.audioBlob);
-            }
 
-            return songObj;
+                return songObj;
+            } catch (err) {
+                console.error('Error loading individual offline song record:', err);
+                return null;
+            }
         });
 
         const mappedSongs = await Promise.all(mappedSongsPromises);
