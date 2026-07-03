@@ -2496,12 +2496,22 @@ function startVoiceSearch() {
 
     recognition.onerror = (event) => {
         console.error('Speech recognition error:', event.error);
-        if (event.error === 'not-allowed') {
-            showToast('Microphone permission denied.', 'error');
-        } else {
-            showToast('Voice search failed. Try again.', 'error');
-        }
         if (overlayEl) overlayEl.classList.add('hidden');
+        
+        if (event.error === 'not-allowed') {
+            showToast('Microphone permission denied. Please allow mic access in your browser/app settings.', 'error');
+        } else if (event.error === 'network') {
+            showToast('Voice search requires a stable internet connection to Google Speech Services. Please check your connection and try again.', 'error');
+            // Fallback: focus the search input so the user can type instead
+            DOM.searchInput.focus();
+        } else if (event.error === 'no-speech') {
+            showToast('No speech detected. Please try again and speak clearly.', 'warning');
+        } else if (event.error === 'aborted') {
+            // User cancelled, no toast needed
+        } else {
+            showToast(`Voice search failed (${event.error}). Try typing your search instead.`, 'error');
+            DOM.searchInput.focus();
+        }
     };
 
     recognition.onend = () => {
@@ -2562,8 +2572,19 @@ function startSongIdentification() {
 
     recognition.onerror = (event) => {
         console.error('Song identification speech error:', event.error);
+        
         if (event.error === 'not-allowed') {
-            showToast('Microphone permission denied.', 'error');
+            showToast('Microphone permission denied. Please allow mic access in your browser/app settings.', 'error');
+            if (overlayEl) overlayEl.classList.add('hidden');
+        } else if (event.error === 'network') {
+            showToast('Song identification requires a stable internet connection to Google Speech Services. Please check your connection.', 'error');
+            if (overlayEl) overlayEl.classList.add('hidden');
+        } else if (event.error === 'no-speech') {
+            showToast('No audio detected. Try again — hum or sing louder!', 'warning');
+        } else if (event.error === 'aborted') {
+            // User cancelled
+        } else {
+            showToast(`Song identification failed (${event.error}).`, 'error');
         }
     };
 
