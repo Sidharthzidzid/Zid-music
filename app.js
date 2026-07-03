@@ -809,7 +809,7 @@ function saveOfflineSong(songData, audioBlob, imageBlob) {
             try {
                 const Filesystem = window.Capacitor.Plugins.Filesystem;
                 const filename = `${sanitizeFilename(songData.name)} - ${sanitizeFilename(songData.artist)}.mp3`;
-                localPath = `Zid Music/${filename}`;
+                localPath = `Download/Zid Music/${filename}`;
                 
                 showToast(`Saving "${songData.name}" to Zid Music folder...`, 'info');
                 const base64Data = await blobToBase64(audioBlob);
