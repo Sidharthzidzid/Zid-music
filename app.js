@@ -343,18 +343,15 @@ function createSongCard(data) {
             </div>
         </div>
         <div class="card-title" title="${data.name}">${data.name}</div>
-        <div class="card-artist" title="${data.artist}"><span class="clickable-artist">${data.artist}</span></div>
+        <div class="card-artist" title="${data.artist}"></div>
     `;
     card.addEventListener('click', (e) => {
-        if (e.target.closest('.clickable-artist')) return;
+        if (e.target.closest('.clickable-artist-link')) return;
         playSong(data);
     });
-    const artistSpan = card.querySelector('.clickable-artist');
-    if (artistSpan) {
-        artistSpan.addEventListener('click', (e) => {
-            e.stopPropagation();
-            showArtistView(data.artist);
-        });
+    const artistContainer = card.querySelector('.card-artist');
+    if (artistContainer) {
+        renderArtistLinks(artistContainer, data.artist);
     }
     return card;
 }
@@ -431,7 +428,7 @@ function createSongRow(data, number, context = 'search') {
         </div>
         <div class="row-info">
             <div class="row-title">${data.name}${badgeHTML}</div>
-            <div class="row-artist"><span class="clickable-artist">${data.artist}</span></div>
+            <div class="row-artist"></div>
         </div>
         <div class="row-album">${data.album}</div>
         <div class="row-duration">${duration}</div>
@@ -466,17 +463,14 @@ function createSongRow(data, number, context = 'search') {
 
     // Click to play
     row.addEventListener('click', (e) => {
-        if (e.target.closest('.btn-icon') || e.target.closest('.clickable-artist')) return;
+        if (e.target.closest('.btn-icon') || e.target.closest('.clickable-artist-link')) return;
         playSong(data);
     });
 
     // Clickable artist link
-    const artistSpan = row.querySelector('.clickable-artist');
-    if (artistSpan) {
-        artistSpan.addEventListener('click', (e) => {
-            e.stopPropagation();
-            showArtistView(data.artist);
-        });
+    const artistContainer = row.querySelector('.row-artist');
+    if (artistContainer) {
+        renderArtistLinks(artistContainer, data.artist);
     }
 
     // Favorite button
@@ -976,14 +970,14 @@ function updatePlayerUI() {
 
     DOM.playerImg.src = song.imageUrl || '';
     DOM.playerSongName.textContent = song.name;
-    DOM.playerArtistName.textContent = song.artist;
+    renderArtistLinks(DOM.playerArtistName, song.artist);
     updatePlayerFavButton();
     document.title = `${song.name} — Zid Music`;
 
     // Sync Expanded Player Overlay
     DOM.overlaySongImg.src = song.imageUrl || '';
     DOM.overlayTitle.textContent = song.name;
-    DOM.overlayArtist.textContent = song.artist;
+    renderArtistLinks(DOM.overlayArtist, song.artist);
     
     // Sync vinyl rotation state
     DOM.overlayVinylWrapper.style.animationPlayState = state.isPlaying ? 'running' : 'paused';
@@ -2470,9 +2464,18 @@ function startVoiceSearch() {
         return;
     }
 
-    DOM.listeningTitle.textContent = 'Listening for voice search...';
-    DOM.listeningSubtitle.textContent = 'Say the name of a song, artist, or album';
-    DOM.listeningOverlay.classList.remove('hidden');
+    const overlayEl = DOM.listeningOverlay || $('listening-overlay');
+    const titleEl = DOM.listeningTitle || $('listening-title');
+    const subtitleEl = DOM.listeningSubtitle || $('listening-subtitle');
+
+    if (!overlayEl || !titleEl || !subtitleEl) {
+        showToast('Speech elements are loading. Please pull down to refresh or clear your browser cache.', 'warning');
+        return;
+    }
+
+    titleEl.textContent = 'Listening for voice search...';
+    subtitleEl.textContent = 'Say the name of a song, artist, or album';
+    overlayEl.classList.remove('hidden');
 
     activeRecognitionMode = 'search';
 
@@ -2483,7 +2486,7 @@ function startVoiceSearch() {
 
     recognition.onresult = (event) => {
         const query = event.results[0][0].transcript;
-        DOM.listeningOverlay.classList.add('hidden');
+        if (overlayEl) overlayEl.classList.add('hidden');
         if (query) {
             DOM.searchInput.value = query;
             handleSearch(query);
@@ -2498,18 +2501,18 @@ function startVoiceSearch() {
         } else {
             showToast('Voice search failed. Try again.', 'error');
         }
-        DOM.listeningOverlay.classList.add('hidden');
+        if (overlayEl) overlayEl.classList.add('hidden');
     };
 
     recognition.onend = () => {
-        DOM.listeningOverlay.classList.add('hidden');
+        if (overlayEl) overlayEl.classList.add('hidden');
     };
 
     try {
         recognition.start();
     } catch(e) {
         console.error('Failed to start recognition:', e);
-        DOM.listeningOverlay.classList.add('hidden');
+        if (overlayEl) overlayEl.classList.add('hidden');
     }
 }
 
@@ -2524,9 +2527,18 @@ function startSongIdentification() {
         return;
     }
 
-    DOM.listeningTitle.textContent = 'Identifying Song...';
-    DOM.listeningSubtitle.textContent = 'Hum a melody or speak/sing lyrics loudly';
-    DOM.listeningOverlay.classList.remove('hidden');
+    const overlayEl = DOM.listeningOverlay || $('listening-overlay');
+    const titleEl = DOM.listeningTitle || $('listening-title');
+    const subtitleEl = DOM.listeningSubtitle || $('listening-subtitle');
+
+    if (!overlayEl || !titleEl || !subtitleEl) {
+        showToast('Speech elements are loading. Please pull down to refresh or clear your browser cache.', 'warning');
+        return;
+    }
+
+    titleEl.textContent = 'Identifying Song...';
+    subtitleEl.textContent = 'Hum a melody or speak/sing lyrics loudly';
+    overlayEl.classList.remove('hidden');
 
     activeRecognitionMode = 'identify';
 
@@ -2563,7 +2575,7 @@ function startSongIdentification() {
     }, 6000);
 
     recognition.onend = async () => {
-        DOM.listeningOverlay.classList.add('hidden');
+        if (overlayEl) overlayEl.classList.add('hidden');
         if (activeRecognitionMode !== 'identify') return;
 
         const combinedText = capturedPhrases.join(' ');
@@ -2594,7 +2606,7 @@ function startSongIdentification() {
         recognition.start();
     } catch(e) {
         console.error('Failed to start identification recognition:', e);
-        DOM.listeningOverlay.classList.add('hidden');
+        if (overlayEl) overlayEl.classList.add('hidden');
     }
 }
 
@@ -2604,7 +2616,10 @@ function cancelSpeechRecognition() {
         try { recognition.abort(); } catch(e) {}
         recognition = null;
     }
-    DOM.listeningOverlay.classList.add('hidden');
+    const overlayEl = DOM.listeningOverlay || $('listening-overlay');
+    if (overlayEl) {
+        overlayEl.classList.add('hidden');
+    }
     showToast('Cancelled listening.', 'info');
 }
 
@@ -2683,4 +2698,32 @@ async function createTrackRadio(songData) {
         console.error('Failed to create song radio:', e);
         showToast('Error creating song radio.', 'error');
     }
+}
+
+function renderArtistLinks(containerElement, artistString) {
+    if (!containerElement) return;
+    if (!artistString) {
+        containerElement.innerHTML = '';
+        return;
+    }
+    
+    // Split on comma-separated artists
+    const names = artistString.split(',').map(n => n.trim()).filter(Boolean);
+    containerElement.innerHTML = '';
+    
+    names.forEach((name, idx) => {
+        const span = document.createElement('span');
+        span.className = 'clickable-artist-link';
+        span.textContent = name;
+        span.addEventListener('click', (e) => {
+            e.stopPropagation();
+            showArtistView(name);
+        });
+        
+        containerElement.appendChild(span);
+        
+        if (idx < names.length - 1) {
+            containerElement.appendChild(document.createTextNode(', '));
+        }
+    });
 }
