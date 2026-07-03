@@ -1236,11 +1236,17 @@ a {
     }
 
     .search-mic-btn {
-        right: 12px;
+        right: 8px;
+        padding: 8px;
+    }
+
+    .search-mic-btn svg {
+        width: 20px;
+        height: 20px;
     }
 
     .search-input {
-        padding-right: 48px;
+        padding-right: 44px;
     }
 
     .top-bar {
