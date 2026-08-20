@@ -2,6 +2,7 @@
 
 // ========== API Configuration ==========
 const API_BASE_URLS = [
+    'https://jiosaavn-api.sidharthvnair3.workers.dev/api',
     'https://saavn.sumit.co/api',
     'http://localhost:4000/api',
 ];
