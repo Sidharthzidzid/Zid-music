@@ -2,8 +2,7 @@
 
 // ========== API Configuration ==========
 const API_BASE_URLS = [
-    'https://nepotuneapi.vercel.app/api',
-    'https://jiosaavn-api-wine.vercel.app/api',
+    'https://saavn.dev/api',
     'https://jiosaavn-api-two.vercel.app/api',
     'https://jiosaavn-api-privatecvc2.vercel.app/api',
     'http://localhost:4000/api',
