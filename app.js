@@ -2,9 +2,7 @@
 
 // ========== API Configuration ==========
 const API_BASE_URLS = [
-    'https://saavn.dev/api',
-    'https://jiosaavn-api-two.vercel.app/api',
-    'https://jiosaavn-api-privatecvc2.vercel.app/api',
+    'https://saavn.sumit.co/api',
     'http://localhost:4000/api',
 ];
 
