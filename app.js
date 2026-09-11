@@ -280,7 +280,7 @@ async function testApiConnection() {
 }
 
 // ========== API Calls ==========
-async function searchSongs(query, limit = 20) {
+async function searchSongs(query, limit = 40) {
     try {
         const res = await fetch(`${API_BASE}/search/songs?query=${encodeURIComponent(query)}&limit=${limit}`);
         const data = await res.json();
@@ -300,9 +300,9 @@ function extractSongData(song) {
     let audioUrl = '';
 
     if (Array.isArray(downloadUrl)) {
-        // Prefer highest quality
-        const quality = downloadUrl.find(d => d.quality === '320kbps')
-            || downloadUrl.find(d => d.quality === '160kbps')
+        // Prefer 160kbps for fluid, uninterrupted streaming; fallback to 320kbps or others
+        const quality = downloadUrl.find(d => d.quality === '160kbps')
+            || downloadUrl.find(d => d.quality === '320kbps')
             || downloadUrl.find(d => d.quality === '96kbps')
             || downloadUrl[downloadUrl.length - 1];
         audioUrl = quality ? quality.url || quality.link : '';
@@ -390,16 +390,11 @@ function createSongCard(data) {
             </div>
         </div>
         <div class="card-title" title="${data.name}">${data.name}</div>
-        <div class="card-artist" title="${data.artist}"></div>
+        <div class="card-artist" title="${data.artist}">${data.artist}</div>
     `;
-    card.addEventListener('click', (e) => {
-        if (e.target.closest('.clickable-artist-link')) return;
+    card.addEventListener('click', () => {
         playSong(data);
     });
-    const artistContainer = card.querySelector('.card-artist');
-    if (artistContainer) {
-        renderArtistLinks(artistContainer, data.artist);
-    }
     return card;
 }
 
@@ -424,7 +419,7 @@ function handleSearch(query) {
     DOM.saavnSearchResults.innerHTML = '<div class="loading-spinner"><div class="spinner"></div></div>';
 
     state.searchTimeout = setTimeout(async () => {
-        const saavnSongs = await searchSongs(query, 12);
+        const saavnSongs = await searchSongs(query, 40);
         renderSaavnSearchResults(saavnSongs);
     }, 400);
 }
@@ -522,14 +517,14 @@ function createSongRow(data, number, context = 'search') {
 
     // Click to play
     row.addEventListener('click', (e) => {
-        if (e.target.closest('.btn-icon') || e.target.closest('.clickable-artist-link')) return;
+        if (e.target.closest('.btn-icon')) return;
         playSong(data);
     });
 
-    // Clickable artist link
+    // Plain text artist name (no mis-touch clicks)
     const artistContainer = row.querySelector('.row-artist');
     if (artistContainer) {
-        renderArtistLinks(artistContainer, data.artist);
+        artistContainer.textContent = data.artist;
     }
 
     // Favorite button
@@ -1429,12 +1424,12 @@ function updatePlayerUI() {
 
     DOM.playerImg.src = song.imageUrl || '';
     DOM.playerSongName.textContent = song.name;
-    renderArtistLinks(DOM.playerArtistName, song.artist);
+    DOM.playerArtistName.textContent = song.artist;
     updatePlayerFavButton();
     updatePlayerDownloadButton();
     document.title = `${song.name} — Zid Music`;
 
-    // Sync Expanded Player Overlay
+    // Sync Expanded Player Overlay (CD Animation Page - artist links active here)
     DOM.overlaySongImg.src = song.imageUrl || '';
     DOM.overlayTitle.textContent = song.name;
     renderArtistLinks(DOM.overlayArtist, song.artist);
@@ -1706,35 +1701,93 @@ function setupEventListeners() {
         });
     });
 
-    // Apple Dock Interactive Magnification Physics (macOS authentic curve)
+    // Apple Dock Interactive Magnification Physics (Desktop Mouse & Mobile Touch Sliding)
     const dockContainer = document.getElementById('apple-dock') || document.querySelector('.dock-nav');
     if (dockContainer) {
         const dockItems = dockContainer.querySelectorAll('.nav-item, .dock-brand');
-        dockContainer.addEventListener('mousemove', (e) => {
-            const mouseX = e.clientX;
+
+        const applyDockMagnification = (clientX) => {
+            const isMobile = window.innerWidth <= 768;
+            const maxRange = isMobile ? 80 : 130;
+            const maxScale = isMobile ? 0.28 : 0.32;
+            const maxYShift = isMobile ? -8 : -12;
+
             dockItems.forEach(item => {
                 const rect = item.getBoundingClientRect();
                 const center = rect.left + rect.width / 2;
-                const dist = Math.abs(mouseX - center);
-                const maxRange = 130;
+                const dist = Math.abs(clientX - center);
                 if (dist < maxRange) {
                     const norm = 1 - (dist / maxRange);
                     // Smooth sinusoidal falloff curve
-                    const scale = 1 + (0.32 * Math.sin(norm * (Math.PI / 2)));
-                    const yShift = -12 * Math.sin(norm * (Math.PI / 2));
+                    const scale = 1 + (maxScale * Math.sin(norm * (Math.PI / 2)));
+                    const yShift = maxYShift * Math.sin(norm * (Math.PI / 2));
+                    item.style.transition = 'transform 0.04s ease-out';
                     item.style.transform = `scale(${scale.toFixed(3)}) translateY(${yShift.toFixed(1)}px)`;
                     item.style.zIndex = Math.round(10 + norm * 10);
                 } else {
+                    item.style.transition = 'transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1)';
                     item.style.transform = '';
                     item.style.zIndex = '';
                 }
             });
-        });
-        dockContainer.addEventListener('mouseleave', () => {
+        };
+
+        const resetDockMagnification = () => {
             dockItems.forEach(item => {
+                item.style.transition = 'transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)';
                 item.style.transform = '';
                 item.style.zIndex = '';
             });
+        };
+
+        // Desktop mouse movement
+        dockContainer.addEventListener('mousemove', (e) => {
+            applyDockMagnification(e.clientX);
+        });
+        dockContainer.addEventListener('mouseleave', () => {
+            resetDockMagnification();
+        });
+
+        // Mobile touch sliding animation
+        let isTouchSliding = false;
+        let lastTouchedNav = null;
+
+        dockContainer.addEventListener('touchstart', (e) => {
+            if (e.touches && e.touches.length > 0) {
+                isTouchSliding = true;
+                const touch = e.touches[0];
+                applyDockMagnification(touch.clientX);
+                const elem = document.elementFromPoint(touch.clientX, touch.clientY);
+                lastTouchedNav = elem ? elem.closest('.nav-item') : null;
+            }
+        }, { passive: true });
+
+        dockContainer.addEventListener('touchmove', (e) => {
+            if (!isTouchSliding || !e.touches || e.touches.length === 0) return;
+            const touch = e.touches[0];
+            applyDockMagnification(touch.clientX);
+            const elem = document.elementFromPoint(touch.clientX, touch.clientY);
+            const nav = elem ? elem.closest('.nav-item') : null;
+            if (nav) {
+                lastTouchedNav = nav;
+            }
+        }, { passive: true });
+
+        const handleTouchEnd = () => {
+            if (!isTouchSliding) return;
+            isTouchSliding = false;
+            resetDockMagnification();
+            if (lastTouchedNav && lastTouchedNav.dataset.view) {
+                switchView(lastTouchedNav.dataset.view);
+            }
+            lastTouchedNav = null;
+        };
+
+        dockContainer.addEventListener('touchend', handleTouchEnd);
+        dockContainer.addEventListener('touchcancel', () => {
+            isTouchSliding = false;
+            resetDockMagnification();
+            lastTouchedNav = null;
         });
     }
 
@@ -1867,8 +1920,19 @@ function setupEventListeners() {
     });
 
     // Audio events
-    audio.addEventListener('timeupdate', updateProgress);
+    let audioRetryAttempts = 0;
+    let lastAudioPosition = 0;
+
+    audio.addEventListener('timeupdate', () => {
+        if (!audio.paused && audio.currentTime > 0) {
+            lastAudioPosition = audio.currentTime;
+            audioRetryAttempts = 0; // reset retry counter on active playback
+        }
+        updateProgress();
+    });
+
     audio.addEventListener('ended', handleSongEnd);
+
     audio.addEventListener('play', () => {
         if (state.currentSong && state.currentSong.audioUrl.startsWith('yt-')) {
             return;
@@ -1876,6 +1940,7 @@ function setupEventListeners() {
         state.isPlaying = true;
         updatePlayButton();
     });
+
     audio.addEventListener('pause', () => {
         if (state.currentSong && state.currentSong.audioUrl.startsWith('yt-')) {
             return;
@@ -1883,12 +1948,54 @@ function setupEventListeners() {
         state.isPlaying = false;
         updatePlayButton();
     });
+
+    // Handle buffering and connection stalls gracefully without breaking playback
+    audio.addEventListener('waiting', () => {
+        // Stays playing logically so UI and state don't flicker or skip
+    });
+
+    audio.addEventListener('stalled', () => {
+        console.warn('Audio stream stalled momentarily; waiting for buffer...');
+    });
+
     audio.addEventListener('error', (e) => {
         // Ignore audio player errors if we are playing a YouTube track
         if (state.currentSong && state.currentSong.audioUrl.startsWith('yt-')) {
             return;
         }
-        console.error('Audio error:', e);
+        console.warn('Audio stream encountered error at position:', lastAudioPosition, e);
+
+        // Smart stream recovery: Resume current song from last position without skipping
+        if (audioRetryAttempts < 2 && state.currentSong && state.currentSong.audioUrl) {
+            audioRetryAttempts++;
+            console.log(`Recovering audio stream (attempt ${audioRetryAttempts}/2)...`);
+            const resumePos = lastAudioPosition;
+
+            // Reset src and reload
+            const currentSrc = audio.src;
+            audio.src = '';
+            audio.load();
+            audio.src = currentSrc || state.currentSong.audioUrl;
+            audio.load();
+
+            const onCanPlay = () => {
+                audio.removeEventListener('canplay', onCanPlay);
+                if (resumePos > 0) {
+                    try {
+                        audio.currentTime = resumePos;
+                    } catch (seekErr) {
+                        console.warn('Could not restore resume position:', seekErr);
+                    }
+                }
+                audio.play().catch(err => {
+                    console.warn('Retry play error:', err);
+                });
+            };
+            audio.addEventListener('canplay', onCanPlay);
+            return;
+        }
+
+        audioRetryAttempts = 0;
         showToast('Playback error. Trying next song...', 'error');
         setTimeout(playNext, 1500);
     });
@@ -2671,8 +2778,11 @@ function checkPreload(currentTime, duration) {
     if (!state.preloadNextSong) return; // Skip if preloading is disabled to save data
     if (!duration || (!state.autoplay && state.queueIndex >= state.queue.length - 1)) return;
 
-    // Trigger preload 20 seconds before end
-    if (duration - currentTime <= 20) {
+    // Only preload if active audio is well buffered (readyState >= 3) to prevent starving current track
+    if (audio.readyState < 3) return;
+
+    // Trigger preload 8 seconds before end (instead of 20s) so it doesn't interrupt playback
+    if (duration - currentTime <= 8) {
         let nextSong = null;
         if (state.queueIndex < state.queue.length - 1) {
             nextSong = state.queue[state.queueIndex + 1];
@@ -2684,7 +2794,7 @@ function checkPreload(currentTime, duration) {
             // YouTube has its own buffer. Preload JioSaavn / Offline direct M4A streams
             const isYt = nextSong.audioUrl.startsWith('yt-');
             if (!isYt) {
-                console.log('Seamless Preloading next track:', nextSong.name, nextSong.audioUrl);
+                console.log('Seamless Preloading next track:', nextSong.name);
                 DOM.audioPreloader.src = nextSong.audioUrl;
                 DOM.audioPreloader.load();
             }
