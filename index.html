@@ -16,68 +16,76 @@
         <div class="bg-orb bg-orb-1"></div>
         <div class="bg-orb bg-orb-2"></div>
         <div class="bg-orb bg-orb-3"></div>
+        <div class="bg-orb bg-orb-4"></div>
+        <div class="bg-orb bg-orb-5"></div>
+        <div class="bg-mesh-overlay"></div>
     </div>
 
     <!-- Main App Container -->
     <div id="app">
-        <!-- Sidebar -->
-        <aside id="sidebar" class="sidebar">
-            <div class="logo">
-                <div class="logo-icon">
+        <!-- Apple Liquid Glass Dock Navigation -->
+        <aside id="sidebar" class="apple-dock-wrapper sidebar">
+            <div class="apple-dock" id="apple-dock">
+                <div class="dock-brand" title="Zid Music" onclick="switchView('home')">
                     <svg viewBox="0 0 40 40" fill="none">
-                        <circle cx="20" cy="20" r="18" stroke="url(#logoGrad)" stroke-width="2.5"/>
-                        <circle cx="20" cy="20" r="7" fill="url(#logoGrad)"/>
-                        <path d="M20 2 C20 2 35 12 35 20 C35 28 20 38 20 38" stroke="url(#logoGrad)" stroke-width="2" fill="none" opacity="0.5"/>
+                        <circle cx="20" cy="20" r="18" stroke="url(#dockLogoGrad)" stroke-width="2.5"/>
+                        <circle cx="20" cy="20" r="7" fill="url(#dockLogoGrad)"/>
+                        <path d="M20 2 C20 2 35 12 35 20 C35 28 20 38 20 38" stroke="url(#dockLogoGrad)" stroke-width="2" fill="none" opacity="0.6"/>
                         <defs>
-                            <linearGradient id="logoGrad" x1="0" y1="0" x2="40" y2="40">
-                                <stop offset="0%" stop-color="#a855f7"/>
-                                <stop offset="100%" stop-color="#06b6d4"/>
+                            <linearGradient id="dockLogoGrad" x1="0" y1="0" x2="40" y2="40">
+                                <stop offset="0%" stop-color="#c084fc"/>
+                                <stop offset="50%" stop-color="#ec4899"/>
+                                <stop offset="100%" stop-color="#6366f1"/>
                             </linearGradient>
                         </defs>
                     </svg>
+                    <span class="dock-tooltip">Zid Music</span>
                 </div>
-                <span class="logo-text">Zid Music</span>
-            </div>
 
-            <nav class="sidebar-nav">
-                <button class="nav-item active" data-view="home" id="nav-home">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
-                    <span>Home</span>
-                </button>
-                <button class="nav-item" data-view="search" id="nav-search">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-                    <span>Search</span>
-                </button>
-                <button class="nav-item" data-view="queue" id="nav-queue">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
-                    <span>Queue</span>
-                </button>
-                <button class="nav-item" data-view="favorites" id="nav-favorites">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
-                    <span>Favorites</span>
-                </button>
-                <button class="nav-item" data-view="history" id="nav-history">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                    <span>History</span>
-                </button>
-                <button class="nav-item" data-view="playlists" id="nav-playlists">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
-                    <span>Playlists</span>
-                </button>
-                <button class="nav-item" data-view="offline" id="nav-offline">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                    <span>Downloads</span>
-                </button>
-                <button class="nav-item" id="nav-identify">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a7 7 0 1 0 10 10"/><circle cx="12" cy="12" r="3"/><path d="M12 9a3 3 0 0 1 3 3"/></svg>
-                    <span>Identify Song</span>
-                </button>
-            </nav>
+                <div class="dock-divider"></div>
 
-            <div class="sidebar-footer">
-                <div class="api-status" id="api-status">
-                    <span class="status-dot"></span>
-                    <span class="status-text">Connecting...</span>
+                <nav class="sidebar-nav dock-nav">
+                    <button class="nav-item active" data-view="home" id="nav-home">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+                        <span class="dock-tooltip">Home</span>
+                    </button>
+                    <button class="nav-item" data-view="search" id="nav-search">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                        <span class="dock-tooltip">Search</span>
+                    </button>
+                    <button class="nav-item" data-view="queue" id="nav-queue">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+                        <span class="dock-tooltip">Queue</span>
+                    </button>
+                    <button class="nav-item" data-view="favorites" id="nav-favorites">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+                        <span class="dock-tooltip">Favorites</span>
+                    </button>
+                    <button class="nav-item" data-view="history" id="nav-history">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                        <span class="dock-tooltip">History</span>
+                    </button>
+                    <button class="nav-item" data-view="playlists" id="nav-playlists">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+                        <span class="dock-tooltip">Playlists</span>
+                    </button>
+                    <button class="nav-item" data-view="offline" id="nav-offline">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                        <span class="dock-tooltip">Downloads</span>
+                    </button>
+                    <button class="nav-item" id="nav-identify">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a7 7 0 1 0 10 10"/><circle cx="12" cy="12" r="3"/><path d="M12 9a3 3 0 0 1 3 3"/></svg>
+                        <span class="dock-tooltip">Identify</span>
+                    </button>
+                </nav>
+
+                <div class="dock-divider"></div>
+
+                <div class="sidebar-footer dock-footer">
+                    <div class="api-status" id="api-status">
+                        <span class="status-dot"></span>
+                        <span class="status-text dock-tooltip">Live API</span>
+                    </div>
                 </div>
             </div>
         </aside>
@@ -86,9 +94,24 @@
         <main id="main-content" class="main-content">
             <!-- Top Bar -->
             <header class="top-bar">
-                <button id="mobile-menu-btn" class="mobile-menu-btn">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
-                </button>
+                <div class="top-brand" onclick="switchView('home')">
+                    <div class="top-brand-icon">
+                        <svg viewBox="0 0 40 40" fill="none">
+                            <circle cx="20" cy="20" r="18" stroke="url(#topBarLogoGrad)" stroke-width="2.5"/>
+                            <circle cx="20" cy="20" r="7" fill="url(#topBarLogoGrad)"/>
+                            <path d="M20 2 C20 2 35 12 35 20 C35 28 20 38 20 38" stroke="url(#topBarLogoGrad)" stroke-width="2" fill="none" opacity="0.5"/>
+                            <defs>
+                                <linearGradient id="topBarLogoGrad" x1="0" y1="0" x2="40" y2="40">
+                                    <stop offset="0%" stop-color="#c084fc"/>
+                                    <stop offset="50%" stop-color="#ec4899"/>
+                                    <stop offset="100%" stop-color="#6366f1"/>
+                                </linearGradient>
+                            </defs>
+                        </svg>
+                    </div>
+                    <span class="top-brand-name">Zid <span class="gradient-text">Music</span></span>
+                </div>
+
                 <div class="search-container">
                     <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
                     <input type="text" id="search-input" class="search-input" placeholder="Search for songs, artists, albums..." autocomplete="off">
@@ -440,6 +463,12 @@
                     </button>
                     <button class="btn-icon" id="overlay-playlist-btn" title="Add to Playlist">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="12" x2="15" y2="12"/><line x1="3" y1="6" x2="18" y2="6"/><line x1="3" y1="18" x2="15" y2="18"/><line x1="19" y1="13" x2="19" y2="19"/><line x1="16" y1="16" x2="22" y2="16"/></svg>
+                    </button>
+                    <button class="btn-icon overlay-tab-toggle" id="overlay-toggle-lyrics-btn" title="Lyrics">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><line x1="9" y1="9" x2="15" y2="9"/><line x1="9" y1="13" x2="13" y2="13"/></svg>
+                    </button>
+                    <button class="btn-icon overlay-tab-toggle" id="overlay-toggle-queue-btn" title="Queue">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
                     </button>
                     
                     <!-- Sleep Timer -->
