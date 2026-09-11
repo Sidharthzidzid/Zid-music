@@ -1727,6 +1727,17 @@ body.has-active-player .main-content {
         filter: blur(28px) !important;
     }
 
+    /* Lighten mobile GPU load by hiding secondary orbs and slowing primaries */
+    .bg-orb-3,
+    .bg-orb-4,
+    .bg-orb-5 {
+        display: none !important;
+    }
+    .bg-orb-1,
+    .bg-orb-2 {
+        animation-duration: 45s !important;
+    }
+
     /* Mobile Floating Apple Dock */
     .apple-dock-wrapper,
     .sidebar {
@@ -1747,6 +1758,7 @@ body.has-active-player .main-content {
         gap: 0;
         border-radius: 24px;
         box-sizing: border-box;
+        touch-action: none;
     }
 
     .dock-brand { display: none !important; }
@@ -1774,6 +1786,9 @@ body.has-active-player .main-content {
         border-radius: 14px;
         padding: 0;
         margin: 0;
+        user-select: none;
+        -webkit-user-select: none;
+        -webkit-touch-callout: none;
     }
 
     .nav-item svg { width: 20px; height: 20px; }
@@ -1827,6 +1842,14 @@ body.has-active-player .main-content {
         gap: 12px;
     }
 
+    .song-card {
+        backdrop-filter: none !important;
+        -webkit-backdrop-filter: none !important;
+        background: rgba(22, 20, 36, 0.78) !important;
+        content-visibility: auto;
+        contain-intrinsic-size: 220px;
+    }
+
     .player-inner { padding: 0 12px; }
     .player-extra { display: none; }
     .player-song-info { max-width: none; }
@@ -1840,6 +1863,8 @@ body.has-active-player .main-content {
         padding: 8px 10px;
         gap: 10px;
         align-items: center;
+        content-visibility: auto;
+        contain-intrinsic-size: 60px;
     }
     .row-number {
         width: 22px;
